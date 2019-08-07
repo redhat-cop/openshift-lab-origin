@@ -1,1 +1,0 @@
-# openshift-lab-origin

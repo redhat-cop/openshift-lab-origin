@@ -1,0 +1,39 @@
+= Setting a Project Request Template on OCP4
+
+. Get the current project request template:
++
+[source,sh]
+----
+oc adm create-bootstrap-project-template -o yaml > $HOME/project_request_template.yaml
+----
+
+. Edit the template (add LimitRanges, NetworkPolicies, ...) in `$HOME/project_request_template.yaml`. Note the template name: `project-request`. Do not change this template name.
+. Create the Project Request template in the `openshift-config` project
++
+[source,sh]
+----
+oc create -f $HOME/project_request_template.yaml -n openshift-config
+----
+
+. Tell OpenShift to use this template by creating a Custom Resource of type `Project.config.openshift.io/v1` named `cluster` and importing the CustomResource into the `openshift-config` project
+
++
+[source,sh]
+----
+echo '
+apiVersion: "config.openshift.io/v1"
+kind: "Project"
+metadata:
+  name: "cluster"
+spec:
+  projectRequestMessage: "You requested a new project"
+  projectRequestTemplate:
+    name: "project-request"' | oc create -n openshift-config -f -
+----
+
+. Create a new project and validate that your changes have been applied.
++
+[source,sh]
+----
+oc new-project test-project-request
+----
