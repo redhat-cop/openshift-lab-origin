@@ -1,2 +1,7 @@
-# documents
-How to Documents on topics related to OpenShift and Ansible
+== OpenShift Lab Origin
+
+This repository holds documents that may eventually make it into a Lab in OpenShift Training.
+
+*Format*: AsciiDoc
+*Topics*: OpenShift 4 (for now)
+*Purpose*: To publish lab instructions early for use in Red Hat GPTE ILTs. And to solicit feedback via Github. PRs for bug fixes / corrections are welcome. Issues are welcome as well.
