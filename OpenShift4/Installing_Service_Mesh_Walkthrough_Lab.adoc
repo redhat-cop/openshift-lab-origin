@@ -5,7 +5,7 @@ include::../../tools/00_0_Lab_Header_Template.adoc[]
 
 .Goals
 
-* Set up the Service Mesh *Technology Preview* 7 on your cluster (this renders your cluster *unsupported*!)
+* Set up the Service Mesh *Technology Preview* 12 on your cluster (this renders your cluster *unsupported*!)
 * Explore Service Mesh capabilities using the BookInfo example.
 
 [[labexercises]]
@@ -14,49 +14,74 @@ include::../../tools/00_0_Lab_Header_Template.adoc[]
 == Set up Service Mesh on your Cluster
 
 [NOTE]
-The installation instructions for OCP 3.11 are located at https://docs.openshift.com/container-platform/3.11/servicemesh-install/servicemesh-install.html
+The installation instructions https://docs.openshift.com/container-platform/4.1/service_mesh/service_mesh_install/installing-ossm.html
 
 Follow the instructions to deploy the Service Mesh into your cluster. The following are the steps necessary to get Istio running.
 
-. Make sure you have two Infranodes (one Infranode is not big enough for all the Istio components). You may need to scale your Infranode Machineset to two replicas.
-. Additionally make sure your infranodes have the label `infra=infra` (you should have added that label when you created the Infranode MachineSet)
-
-. Clone the Service Mesh Github project
+. Install the Jaeger Operator
 +
 [source,sh]
 ----
-cd $HOME
-git clone https://github.com/Maistra/openshift-ansible
-cd $HOME/openshift-ansible
-git checkout maistra-0.7
+oc new-project observability # create the project for the jaeger operator
+oc create -n observability -f https://raw.githubusercontent.com/jaegertracing/jaeger-operator/v1.13.1/deploy/crds/jaegertracing_v1_jaeger_crd.yaml
+oc create -n observability -f https://raw.githubusercontent.com/jaegertracing/jaeger-operator/v1.13.1/deploy/service_account.yaml
+oc create -n observability -f https://raw.githubusercontent.com/jaegertracing/jaeger-operator/v1.13.1/deploy/role.yaml
+oc create -n observability -f https://raw.githubusercontent.com/jaegertracing/jaeger-operator/v1.13.1/deploy/role_binding.yaml
+oc create -n observability -f https://raw.githubusercontent.com/jaegertracing/jaeger-operator/v1.13.1/deploy/operator.yaml
 ----
 
-. Create an Istio operator project
+. Check that the Jaeger operator is running
 +
 [source,sh]
 ----
-oc new-project istio-operator --display-name="Service Mesh Operator"
-----
-
-. Create the Istio operator (make sure the variable ${GUID} is set to your GUID)
-+
-[source,sh]
-----
-oc process -f istio_product_operator_template.yaml --param=OPENSHIFT_ISTIO_MASTER_PUBLIC_URL=https://cluster-${GUID}-api.${GUID}.ocp4.opentlc.com:6443 >$HOME/operator.yaml
-oc create -f $HOME/operator.yaml
+oc get pod -n observability
 ----
 +
 .Sample Output
 [source,texinfo]
 ----
-customresourcedefinition.apiextensions.k8s.io/installations.istio.openshift.com created
-role.rbac.authorization.k8s.io/istio-operator created
-rolebinding.rbac.authorization.k8s.io/default-account-istio-operator created
-clusterrolebinding.rbac.authorization.k8s.io/default-account-istio-operator-cluster-role-binding created
-deployment.apps/istio-operator created
+NAME                               READY   STATUS    RESTARTS   AGE
+jaeger-operator-57d9d8774b-jsrtt   1/1     Running   0          36s
 ----
 
-. Check that the operator is running
+. Verify the Operator launched successfully.
++
+[source,sh]
+----
+oc logs -n observability $(oc -n observability get pods -l name=jaeger-operator --output=jsonpath={.items..metadata.name})
+----
++
+.Sample Output
+[source,texinfo]
+----
+time="2019-08-15T04:43:53Z" level=info msg=Versions arch=amd64 jaeger-operator=1.13.1 operator-sdk=v0.8.1 os=linux version=go1.12.5
+time="2019-08-15T04:43:53Z" level=info msg="Auto-detected the platform" platform=openshift
+time="2019-08-15T04:43:53Z" level=info msg="Automatically adjusted the 'es-provision' flag" es-provision=true
+----
+
+. Install the Kiali Operator
++
+[source,sh]
+----
+bash <(curl -L https://git.io/getLatestKialiOperator) --operator-image-version v1.0.0 --operator-watch-namespace '**' --accessible-namespaces '**' --operator-install-kiali false
+----
+
+. Create two projects for the Service Mesh Operator
++
+[source,sh]
+----
+oc new-project istio-operator
+oc new-project istio-system
+----
+
+. Install the Red Hat OpenShift Service Mesh Operator
++
+[source,sh]
+----
+oc apply -n istio-operator -f https://raw.githubusercontent.com/Maistra/istio-operator/maistra-0.12/deploy/servicemesh-operator.yaml
+----
+
+. Check that the Service Mesh operator is running
 +
 [source,sh]
 ----
@@ -66,8 +91,8 @@ oc get pod -n istio-operator
 .Sample Output
 [source,texinfo]
 ----
-NAME                             READY   STATUS    RESTARTS   AGE
-istio-operator-6fc6c4466-rhkd7   1/1     Running   0          101s
+NAME                              READY   STATUS    RESTARTS   AGE
+istio-operator-7d77fcd9cc-qn84t   1/1     Running   0          48s
 ----
 
 . Verify the Operator launched successfully.
@@ -80,61 +105,100 @@ oc logs -n istio-operator $(oc -n istio-operator get pods -l name=istio-operator
 .Sample Output
 [source,texinfo]
 ----
-time="2019-01-17T08:18:06Z" level=info msg="Go Version: go1.9.4"
-time="2019-01-17T08:18:06Z" level=info msg="Go OS/Arch: linux/amd64"
-time="2019-01-17T08:18:06Z" level=info msg="operator-sdk Version: 0.0.5+git"
-time="2019-01-17T08:18:06Z" level=info msg="Metrics service istio-operator created"
-time="2019-01-17T08:18:06Z" level=info msg="Watching resource istio.openshift.com/v1alpha1, kind Installation, namespace istio-operator, resyncPeriod 0"
-----
-+
-[NOTE]
-In 4.0 (0.12) there are some errors and warnings in this log. These do not seem to have an effect though.
+{"level":"info","ts":1565844491.6164489,"logger":"cmd","caller":"manager/main.go:36","msg":"Go Version: go1.12.6"}
+{"level":"info","ts":1565844491.6164849,"logger":"cmd","caller":"manager/main.go:37","msg":"Go OS/Arch: linux/amd64"}
+{"level":"info","ts":1565844491.6164901,"logger":"cmd","caller":"manager/main.go:38","msg":"operator-sdk Version: v0.2.1"}
+{"level":"info","ts":1565844491.6167908,"logger":"leader","caller":"leader/leader.go:55","msg":"Trying to become the leader."}
+{"level":"info","ts":1565844491.706609,"logger":"leader","caller":"leader/leader.go:103","msg":"No pre-existing lock was found."}
+{"level":"info","ts":1565844491.71475,"logger":"leader","caller":"leader/leader.go:127","msg":"Became the leader."}
+{"level":"info","ts":1565844491.7164183,"logger":"cmd","caller":"manager/main.go:90","msg":"Registering Components."}
 
-. Deploy the Control Plane. There are three examples of a Custom Resource that you can use: `cr-minimal.yaml` (which installs the minimal Istio components), `cr-kiali.yaml` (which installs Istio with Kiali) and `cr-full.yaml` (which installs everything available).
-+
-You may want to edit the file `cr-kiali.yaml` before creating the Custom Resource to adjust `username` and `password` for *Kiali*. Should you want to deploy the full CR you will also need to customize other settings (like Github tokens etc.).
-+
+[...]
+
+{"level":"info","ts":1565844492.0125067,"logger":"kubebuilder.controller","caller":"controller/controller.go:153","msg":"Starting workers","Controller":"controlplane-controller","WorkerCount":1}
+{"level":"info","ts":1565844492.5899532,"logger":"kubebuilder.admission.cert.writer","caller":"writer/fs.go:117","msg":"cert directory /tmp/cert doesn't exist, creating"}
+----
+
+. Deploy the Control Plane.
 [TIP]
-Full documentation for the Custom Resource is available at https://docs.openshift.com/container-platform/3.11/servicemesh-install/servicemesh-install.html#creating-custom-resource
+Full documentation for the Custom Resource is available at https://docs.openshift.com/container-platform/4.1/service_mesh/service_mesh_install/installing-ossm.html#ossm-cr-example_installing-ossm
 +
-. Create the CR file `/rooot/cr-ocp.yaml` to create the Service Mesh. You are using the OpenShift version of the images and you are configuring a user `admin` with password `r3dh4t1!` for *Kiali*:
+. Create the custom resource file `/rooot/cr-ocp.yaml` to create the Service Mesh.
++
+Note the following:
+* You are configuring a cluster-wide service mesh (multitenant: false)
+* 3Scale is enabled
+* You are configuring a user `admin` with password `r3dh4t1!` for *Kiali*:
+* You are specifying a specific tag for the Jaeger pods (0.13.1). This is because otherwise the pods would be configured for 0.12 - and those tags don't exist in the Red Hat registry.
 +
 [source,texinfo]
 ----
-echo "apiVersion: istio.openshift.com/v1alpha1
-kind: Installation
+cat << EOF >$HOME/cr-ocp.yaml
+apiVersion: maistra.io/v1
+kind: ServiceMeshControlPlane
 metadata:
-  name: istio-installation
-  namespace: istio-operator
+  name: basic-install
 spec:
-  deployment_type: openshift
-  kiali:
-    username: admin
-    password: r3dh4t1!
-    prefix: kiali/
-    version: v0.13.0" >$HOME/cr_ocp.yaml
+  threeScale:
+    enabled: true
+
+  istio:
+    global:
+      multitenant: false
+      disablePolicyChecks: false
+      proxy:
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 128Mi
+
+    gateways:
+      istio-egressgateway:
+        autoscaleEnabled: false
+      istio-ingressgateway:
+        autoscaleEnabled: false
+        ior_enabled: false
+
+    mixer:
+      policy:
+        autoscaleEnabled: false
+
+      telemetry:
+        autoscaleEnabled: false
+        resources:
+          requests:
+            cpu: 100m
+            memory: 1G
+          limits:
+            cpu: 500m
+            memory: 4G
+
+    pilot:
+      autoscaleEnabled: false
+      traceSampling: 100.0
+
+    kiali:
+      dashboard:
+        user: admin
+        passphrase: r3dh4t1!
+    tracing:
+      enabled: true
+      jaeger:
+        tag: 1.13.1
+EOF
 ----
 
 . Now create the Service Mesh installation.
 +
 [source,sh]
 ----
-oc create -f $HOME/cr_ocp.yaml
+oc create -f $HOME/cr_ocp.yaml -n istio-system
 ----
 
-. Update the namespace `istio-system` and add the node-selector annotation for `infra=infra`. Note that you must edit the *NAMESPACE* as you cannot edit projects (immutable).
-+
-[source,sh]
-----
-oc annotate namespace istio-system openshift.io/node-selector=infra=infra
-----
-+
-.Sample Output
-[source,texinfo]
-----
-namespace/istio-system annotated
-----
-
+////
 . Add the label `tuned.openshift.io/elasticsearch: ""` to the StatefulSet elasticsearch in the `istio-system` project.
 +
 [source,sh]
@@ -148,7 +212,7 @@ oc patch statefulset elasticsearch -n istio-system --patch='{"spec": {"template"
 ----
 oc delete pod --all -n istio-system
 ----
-
+////
 . Watch the progress of the deployment
 +
 [source,sh]
@@ -162,23 +226,21 @@ It will take a minute or two before pods start appearing and you may see some po
 +
 [source,texinfo,nowrap=true]
 ----
-NAME                                          READY     STATUS      RESTARTS   AGE
-elasticsearch-0                          1/1     Running   0          5m24s
-grafana-6c74986664-gqxrr                 1/1     Running   0          30m
-istio-citadel-7996bdc949-nbg6h           1/1     Running   0          30m
-istio-egressgateway-5494b59b9d-4g9wg     1/1     Running   0          30m
-istio-galley-856b445787-nb5zq            1/1     Running   0          30m
-istio-ingressgateway-5c9b6f6d8c-bc6wb    1/1     Running   0          30m
-istio-pilot-9fb9f8d96-kjc28              2/2     Running   0          30m
-istio-policy-c8d8db578-8l9f9             2/2     Running   0          30m
-istio-sidecar-injector-cc76889f5-7wkrc   1/1     Running   0          30m
-istio-telemetry-7d45bb48fb-8r6gg         2/2     Running   0          30m
-jaeger-agent-jm6nn                       1/1     Running   0          12m
-jaeger-agent-mlh2v                       1/1     Running   0          30m
-jaeger-collector-75f9d6cf89-b7cqt        1/1     Running   0          2m40s
-jaeger-query-64d5cb5f5c-8d8gd            1/1     Running   0          2m40s
-kiali-774df5798d-wht4j                   1/1     Running   0          30m
-prometheus-669ffbcbdd-5rnld              1/1     Running   0          30m
+NAME                                      READY   STATUS    RESTARTS   AGE
+elasticsearch-0                           1/1     Running   0          7m34s
+grafana-694d54c786-5dgmm                  2/2     Running   0          4m44s
+istio-citadel-7658c96954-ml58z            1/1     Running   0          8m12s
+istio-egressgateway-d759556b8-6pdmf       1/1     Running   0          5m54s
+istio-galley-7cf565999f-zjgx5             1/1     Running   0          7m2s
+istio-ingressgateway-bc97545d5-jx8ng      1/1     Running   0          5m53s
+istio-pilot-756c96bbfc-j8gft              2/2     Running   0          6m27s
+istio-policy-f78b45cb5-h6rkk              2/2     Running   0          6m39s
+istio-sidecar-injector-5bccb75987-qbgp8   1/1     Running   0          5m1s
+istio-telemetry-f4c6f99d6-vl2q2           2/2     Running   0          6m39s
+jaeger-collector-7f4fcf6c95-9nkd7         1/1     Running   2          7m34s
+jaeger-query-847887c557-g2r5h             3/3     Running   2          7m34s
+kiali-54ff784b57-dc7nc                    1/1     Running   0          4m5s
+prometheus-7b89468cf6-6jvzx               2/2     Running   0          7m56s
 ----
 
 . Examine the created routes in the `istio-system` project
@@ -191,18 +253,18 @@ oc get routes -n istio-system
 .Sample Output
 [source,texinfo,nowrap=true]
 ----
-NAME                   HOST/PORT                                                                   PATH   SERVICES               PORT              TERMINATION   WILDCARD
-grafana                grafana-istio-system.apps.cluster-1b9e.1b9e.ocp4.opentlc.com                       grafana                http                            None
-istio-ingressgateway   istio-ingressgateway-istio-system.apps.cluster-1b9e.1b9e.ocp4.opentlc.com          istio-ingressgateway   http2                           None
-jaeger-query           jaeger-query-istio-system.apps.cluster-1b9e.1b9e.ocp4.opentlc.com                  jaeger-query           jaeger-query      edge          None
-kiali                  kiali-istio-system.apps.cluster-1b9e.1b9e.ocp4.opentlc.com                         kiali                  http-kiali        reencrypt     None
-prometheus             prometheus-istio-system.apps.cluster-1b9e.1b9e.ocp4.opentlc.com                    prometheus             http-prometheus                 None
-tracing                tracing-istio-system.apps.cluster-1b9e.1b9e.ocp4.opentlc.com                       tracing                tracing           edge          None
+NAME                   HOST/PORT                                                                   PATH   SERVICES               PORT    TERMINATION   WILDCARD
+grafana                grafana-istio-system.apps.cluster-1d1a.sandbox21.opentlc.com                       grafana                <all>   reencrypt     None
+istio-ingressgateway   istio-ingressgateway-istio-system.apps.cluster-1d1a.sandbox21.opentlc.com          istio-ingressgateway   80                    None
+jaeger                 jaeger-istio-system.apps.cluster-1d1a.sandbox21.opentlc.com                        jaeger-query           <all>   reencrypt     None
+kiali                  kiali-istio-system.apps.cluster-1d1a.sandbox21.opentlc.com                         kiali                  <all>   reencrypt     None
+prometheus             prometheus-istio-system.apps.cluster-1d1a.sandbox21.opentlc.com                    prometheus             <all>   reencrypt     None
+tracing                tracing-istio-system.apps.cluster-1d1a.sandbox21.opentlc.com                       tracing                <all>   edge          None
 ----
 
 . You will see routes for *Grafana*, *Prometheus* and *Kiali* amongst others.
 
-. Open the *Kiali* Interface in a web browser using the kiali route. Use 'admin' as the user id and 'r3dh4t1!' as the password to log in.
+. Open the *Kiali* Interface in a web browser using the kiali route (making sure to use `https`). Use 'admin' as the user id and 'r3dh4t1!' as the password to log in.
 
 == Bookinfo Tutorial
 
