@@ -1,12 +1,9 @@
-:labname: Service Mesh Bonus Walkthrough
-include::../../tools/00_0_Lab_Header_Template.adoc[]
-
-== {labname} Lab
+== Installing Service Mesh Lab
 
 .Goals
 
 * Set up the Service Mesh *Technology Preview* 12 on your cluster (this renders your cluster *unsupported*!)
-* Explore Service Mesh capabilities using the BookInfo example.
+* Explore Service Mesh capabilities using the Bookinfo example.
 
 [[labexercises]]
 :numbered:
@@ -14,9 +11,9 @@ include::../../tools/00_0_Lab_Header_Template.adoc[]
 == Set up Service Mesh on your Cluster
 
 [NOTE]
-The installation instructions https://docs.openshift.com/container-platform/4.1/service_mesh/service_mesh_install/installing-ossm.html
+The installation instructions can be found at https://docs.openshift.com/container-platform/4.1/service_mesh/service_mesh_install/installing-ossm.html
 
-Follow the instructions to deploy the Service Mesh into your cluster. The following are the steps necessary to get Istio running.
+Follow the instructions to deploy the Service Mesh into your cluster. The following are the steps necessary to get Service Mesh running.
 
 . Install the Jaeger Operator
 +
@@ -59,7 +56,7 @@ time="2019-08-15T04:43:53Z" level=info msg="Auto-detected the platform" platform
 time="2019-08-15T04:43:53Z" level=info msg="Automatically adjusted the 'es-provision' flag" es-provision=true
 ----
 
-. Install the Kiali Operator
+. Install the Kiali Operator. This command doesn't actually install Kiali. That is handled by the Red Hat OpenShift Service Mesh Operator.
 +
 [source,sh]
 ----
@@ -119,25 +116,26 @@ oc logs -n istio-operator $(oc -n istio-operator get pods -l name=istio-operator
 {"level":"info","ts":1565844492.5899532,"logger":"kubebuilder.admission.cert.writer","caller":"writer/fs.go:117","msg":"cert directory /tmp/cert doesn't exist, creating"}
 ----
 
-. Deploy the Control Plane.
+. Deploy the Control Plane by creating a Custom Resource file.
++
 [TIP]
 Full documentation for the Custom Resource is available at https://docs.openshift.com/container-platform/4.1/service_mesh/service_mesh_install/installing-ossm.html#ossm-cr-example_installing-ossm
 +
-. Create the custom resource file `/rooot/cr-ocp.yaml` to create the Service Mesh.
+. Create the custom resource file `$HOME/service-mesh.yaml` to create the Service Mesh.
 +
 Note the following:
 * You are configuring a cluster-wide service mesh (multitenant: false)
 * 3Scale is enabled
 * You are configuring a user `admin` with password `r3dh4t1!` for *Kiali*:
-* You are specifying a specific tag for the Jaeger pods (0.13.1). This is because otherwise the pods would be configured for 0.12 - and those tags don't exist in the Red Hat registry.
+* You are specifying a specific tag for the Jaeger pods (0.13.1). This is because otherwise the pods would be configured for 0.12 - and those tags don't exist in the Red Hat registry resulting in failed pods.
 +
 [source,texinfo]
 ----
-cat << EOF >$HOME/cr-ocp.yaml
+cat << EOF >$HOME/service-mesh.yaml
 apiVersion: maistra.io/v1
 kind: ServiceMeshControlPlane
 metadata:
-  name: basic-install
+  name: global-mesh
 spec:
   threeScale:
     enabled: true
@@ -195,24 +193,9 @@ EOF
 +
 [source,sh]
 ----
-oc create -f $HOME/cr_ocp.yaml -n istio-system
+oc create -f $HOME/service-mesh.yaml -n istio-system
 ----
 
-////
-. Add the label `tuned.openshift.io/elasticsearch: ""` to the StatefulSet elasticsearch in the `istio-system` project.
-+
-[source,sh]
-----
-oc patch statefulset elasticsearch -n istio-system --patch='{"spec": {"template":{"metadata": {"labels": {"tuned.openshift.io/elasticsearch": "" }}}}}'
-----
-
-. Delete all Pods in project `istio-sytem`
-+
-[source,sh]
-----
-oc delete pod --all -n istio-system
-----
-////
 . Watch the progress of the deployment
 +
 [source,sh]
@@ -222,7 +205,7 @@ watch oc get pods -n istio-system
 +
 It will take a minute or two before pods start appearing and you may see some pods temporarily in `Error` and `CrashLoopBackoff` states - which should resolve itselve within a few seconds. The whole installation process can take more than 5 minutes.
 
-. Once you see the following pods all running successfully, Istio has been installed successfully.
+. Once you see the following pods all running successfully, the service mesh has been installed successfully.
 +
 [source,texinfo,nowrap=true]
 ----
@@ -268,6 +251,6 @@ tracing                tracing-istio-system.apps.cluster-1d1a.sandbox21.opentlc.
 
 == Bookinfo Tutorial
 
-Now that Maistra/Istio is successfully deployed on your cluster you can follow the *Bookinfo* tutorial to explore the various capabilities that Istio offers.
+Now that the service mesh is successfully deployed on your cluster you can follow the *Bookinfo* tutorial to explore the various capabilities that Istio offers.
 
-You can find the tutorial at https://docs.openshift.com/container-platform/3.11/servicemesh-install/servicemesh-install.html#bookinfo-tutorial
+You can find the tutorial at https://docs.openshift.com/container-platform/4.1/service_mesh/service_mesh_install/ossm-example-bookinfo.html.
