@@ -148,4 +148,35 @@ kube-apiserver                       4.1.6     True        True          False  
 [...]
 ----
 
+. When the API certificates have been deployed to all API Servers you will see errors that your client certificate is no longer valid. To fix this you will need to edit all your kube config files and remove every line starting with `certificate-authority-data:`. The following Ansible playbook will find all config files and delete that line:
++
+[source,yaml]
+----
+- name: Fix all Kube Configs
+  hosts: localhost
+  become: no
+  tasks:
+  - name: Find all Kube Configs
+    become: yes
+    find:
+      file_type: file
+      hidden: true
+      paths:
+      - /root
+      - /home
+      contains: "^ +certificate-authority-data:"
+      patterns: "*config*"
+      recurse: yes
+    register: r_config_files
+
+  - name: Fix Kube Configs
+    become: yes
+    replace:
+      path: "{{ item.path }}"
+      regexp: "^ +certificate-authority-data:"
+    loop: "{{r_config_files.files}}"
+----
++
+You can save this playbook to a file (e.g. `fix-kube-configs.yaml`) and then run it using `ansible-playbook fix-kube-configs.yaml`.
+
 . You now have proper certificates for your entire OpenShift cluster - and this includes custom applications, the Web Console for your OpenShift Cluster and the API Endpoint.
