@@ -216,7 +216,7 @@ If the cluster missed the initial 24 hour certicate rotation all nodes in the cl
 ----
 oc get nodes
 ----
-+
+
 .Sample Output
 [source,texinfo]
 ----
@@ -251,7 +251,7 @@ Double check that all nodes now show `Ready`. Note that this may take a few seco
 ----
 oc get nodes
 ----
-+
+
 .Sample Output
 [source,texinfo]
 ----
@@ -264,4 +264,4 @@ ip-10-0-162-210.us-east-2.compute.internal   Ready    master   19h   v1.14.0+b98
 ip-10-0-172-133.us-east-2.compute.internal   Ready    worker   18h   v1.14.0+b985ea310
 ----
 
-Your cluster is now fully ready to be used again.ß
+Your cluster is now fully ready to be used again.
