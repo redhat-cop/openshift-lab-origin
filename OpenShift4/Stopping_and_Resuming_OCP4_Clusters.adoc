@@ -1,0 +1,267 @@
+== Enabling OpenShift 4 Clusters for Stop/Resume
+
+When installing OpenShift 4 clusters a bootstrap certificate is created that is used to encrypt the communication between nodes and masters.
+
+This certificate is rotated once 24 hours after cluster installation and then again every 30 days.
+
+Missing this certificate rotation renders the cluster unusable. This requires clusters to be running at least 25 hours after installation before they can be shut down to save cloud hosting costs.
+
+The following process allows for cluster shutdown right after installation. It will also allow for cluster resume at any time. Note that this process *only* works up until the 30 day certificate rotation. But for most test / development / classroom / etc. clusters this will be a usable approach because these types of clusters are usually rather short lived.
+
+=== Preparing the Cluster for Shutdown
+
+These steps will enable a successful restart of a cluster after it has been shut down.
+
+. From the VM that you ran the OpenShift installer from create the following DaemonSet manifest.
++
+[source,sh]
+----
+cat << EOF >$HOME/kubelet-bootstrap-cred-manager-ds.yaml.yaml
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: kubelet-bootstrap-cred-manager
+  namespace: openshift-machine-config-operator
+  labels:
+    k8s-app: kubelet-bootrap-cred-manager
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      k8s-app: kubelet-bootstrap-cred-manager
+  template:
+    metadata:
+      labels:
+        k8s-app: kubelet-bootstrap-cred-manager
+    spec:
+      containers:
+      - name: kubelet-bootstrap-cred-manager
+        image: quay.io/openshift/origin-cli:v4.0
+        command: ['/bin/bash', '-ec']
+        args:
+          - |
+            #!/bin/bash
+
+            set -eoux pipefail
+
+            while true; do
+              unset KUBECONFIG
+
+              echo "----------------------------------------------------------------------"
+              echo "Gather info..."
+              echo "----------------------------------------------------------------------"
+              # context
+              intapi=$(oc get infrastructures.config.openshift.io cluster -o "jsonpath={.status.apiServerURL}")
+              context="$(oc --config=/etc/kubernetes/kubeconfig config current-context)"
+              # cluster
+              cluster="$(oc --config=/etc/kubernetes/kubeconfig config view -o "jsonpath={.contexts[?(@.name==\"$context\")].context.cluster}")"
+              server="$(oc --config=/etc/kubernetes/kubeconfig config view -o "jsonpath={.clusters[?(@.name==\"$cluster\")].cluster.server}")"
+              # token
+              ca_crt_data="$(oc get secret -n openshift-machine-config-operator node-bootstrapper-token -o "jsonpath={.data.ca\.crt}" | base64 --decode)"
+              namespace="$(oc get secret -n openshift-machine-config-operator node-bootstrapper-token  -o "jsonpath={.data.namespace}" | base64 --decode)"
+              token="$(oc get secret -n openshift-machine-config-operator node-bootstrapper-token -o "jsonpath={.data.token}" | base64 --decode)"
+
+              echo "----------------------------------------------------------------------"
+              echo "Generate kubeconfig"
+              echo "----------------------------------------------------------------------"
+
+              export KUBECONFIG="$(mktemp)"
+              kubectl config set-credentials "kubelet" --token="$token" >/dev/null
+              ca_crt="$(mktemp)"; echo "$ca_crt_data" > $ca_crt
+              kubectl config set-cluster $cluster --server="$intapi" --certificate-authority="$ca_crt" --embed-certs >/dev/null
+              kubectl config set-context kubelet --cluster="$cluster" --user="kubelet" >/dev/null
+              kubectl config use-context kubelet >/dev/null
+
+              echo "----------------------------------------------------------------------"
+              echo "Print kubeconfig"
+              echo "----------------------------------------------------------------------"
+              cat "$KUBECONFIG"
+
+              echo "----------------------------------------------------------------------"
+              echo "Whoami?"
+              echo "----------------------------------------------------------------------"
+              oc whoami
+              whoami
+
+              echo "----------------------------------------------------------------------"
+              echo "Moving to real kubeconfig"
+              echo "----------------------------------------------------------------------"
+              cp /etc/kubernetes/kubeconfig /etc/kubernetes/kubeconfig.prev
+              chown root:root ${KUBECONFIG}
+              chmod 0644 ${KUBECONFIG}
+              mv "${KUBECONFIG}" /etc/kubernetes/kubeconfig
+
+              echo "----------------------------------------------------------------------"
+              echo "Sleep 60 seconds..."
+              echo "----------------------------------------------------------------------"
+              sleep 60
+            done
+        securityContext:
+          privileged: true
+          runAsUser: 0
+        volumeMounts:
+          - mountPath: /etc/kubernetes/
+            name: kubelet-dir
+      nodeSelector:
+        node-role.kubernetes.io/master: ""
+      priorityClassName: "system-cluster-critical"
+      restartPolicy: Always
+      securityContext:
+        runAsUser: 0
+      tolerations:
+      - key: "node-role.kubernetes.io/master"
+        operator: "Exists"
+        effect: "NoSchedule"
+      - key: "node.kubernetes.io/unreachable"
+        operator: "Exists"
+        effect: "NoExecute"
+        tolerationSeconds: 120
+      - key: "node.kubernetes.io/not-ready"
+        operator: "Exists"
+        effect: "NoExecute"
+        tolerationSeconds: 120
+      volumes:
+        - hostPath:
+            path: /etc/kubernetes/
+            type: Directory
+          name: kubelet-dir
+EOF
+----
+
+. Deploy the DaemonSet to your cluster.
++
+[source,sh]
+----
+oc apply -f $HOME/kubelet-bootstrap-cred-manager-ds.yaml.yaml
+----
+
+. Delete the secrets `csr-signer-signer` and `csr-signer` from the `openshift-kube-controller-manager-operator` namespace
++
+[source,sh]
+----
+oc delete secrets/csr-signer-signer secrets/csr-signer -n openshift-kube-controller-manager-operator 
+----
++
+This will trigger three Cluster Operators to re-create these secrets. You can watch as the operators switch from Progressing=False to Progressing=True back to Progressing=False. The three operators that will cycle are `kube-apiserver`, `openshift-controller-manager` and `kube-controller-manager`. 
++
+[source,sh]
+----
+watch oc get clusteroperators
+----
++
+.Sample Output
+[source,texinfo]
+----
+NAME                                       VERSION                             AVAILABLE   PROGRESSING   DEGRADED   SINCE
+authentication                             4.2.0-0.nightly-2019-08-27-072819   True        False         False      18h
+cloud-credential                           4.2.0-0.nightly-2019-08-27-072819   True        False         False      18h
+cluster-autoscaler                         4.2.0-0.nightly-2019-08-27-072819   True        False         False      18h
+console                                    4.2.0-0.nightly-2019-08-27-072819   True        False         False      18h
+dns                                        4.2.0-0.nightly-2019-08-27-072819   True        False         False      18h
+image-registry                             4.2.0-0.nightly-2019-08-27-072819   True        False         False      18h
+ingress                                    4.2.0-0.nightly-2019-08-27-072819   True        False         False      3h46m
+insights                                   4.2.0-0.nightly-2019-08-27-072819   True        False         False      18h
+kube-apiserver                             4.2.0-0.nightly-2019-08-27-072819   True        True          False      18h
+kube-controller-manager                    4.2.0-0.nightly-2019-08-27-072819   True        False         False      18h
+kube-scheduler                             4.2.0-0.nightly-2019-08-27-072819   True        False         False      18h
+machine-api                                4.2.0-0.nightly-2019-08-27-072819   True        False         False      18h
+machine-config                             4.2.0-0.nightly-2019-08-27-072819   True        False         False      18h
+marketplace                                4.2.0-0.nightly-2019-08-27-072819   True        False         False      3h46m
+monitoring                                 4.2.0-0.nightly-2019-08-27-072819   True        False         False      3h45m
+network                                    4.2.0-0.nightly-2019-08-27-072819   True        False         False      18h
+node-tuning                                4.2.0-0.nightly-2019-08-27-072819   True        False         False      3h46m
+openshift-apiserver                        4.2.0-0.nightly-2019-08-27-072819   True        False         False      18h
+openshift-controller-manager               4.2.0-0.nightly-2019-08-27-072819   True        False         False      18h
+openshift-samples                          4.2.0-0.nightly-2019-08-27-072819   True        False         False      18h
+operator-lifecycle-manager                 4.2.0-0.nightly-2019-08-27-072819   True        False         False      18h
+operator-lifecycle-manager-catalog         4.2.0-0.nightly-2019-08-27-072819   True        False         False      18h
+operator-lifecycle-manager-packageserver   4.2.0-0.nightly-2019-08-27-072819   True        False         False      3h46m
+service-ca                                 4.2.0-0.nightly-2019-08-27-072819   True        False         False      18h
+service-catalog-apiserver                  4.2.0-0.nightly-2019-08-27-072819   True        False         False      18h
+service-catalog-controller-manager         4.2.0-0.nightly-2019-08-27-072819   True        False         False      18h
+storage                                    4.2.0-0.nightly-2019-08-27-072819   True        False         False      18h
+----
++
+Once all Cluster Operators show *Available=True*, *Progressing=False* and *Degraded=False* the cluster is ready for shutdown.
+
+=== Shutting down the cluster
+
+Any way to stop the VMs making up the cluster works.
+
+The following command will shut down the VMs that make up a cluster on Amazon Web Services. This command needs the `awscli` command to be installed. Make sure that *REGION* points to the region your VMs are deployed in. This also assumes that $HOME/.aws/credentials has the proper AWS credentials available to execute the command. Also this command assumes that your *Cluster Name* is set to `cluster-${GUID}`.
+
+[source,sh]
+----
+export REGION=us-east-2
+export CLUSTERNAME=cluster-${GUID}
+aws ec2 stop-instances --region ${REGION} --instance-ids $(aws ec2 describe-instances --filters "Name=tag:Name,Values=${CLUSTERNAME}-*" "Name=instance-state-name,Values=running" --query Reservations[*].Instances[*].InstanceId --region ${REGION} --output text)
+----
+
+=== Starting the cluster
+
+The following commands will start the cluster VMs in Amazon Web Services.
+
+[source,sh]
+----
+export REGION=us-east-2
+export CLUSTERNAME=cluster-${GUID}
+aws ec2 start-instances --region ${REGION} --instance-ids $(aws ec2 describe-instances --filters "Name=tag:Name,Values=${CLUSTERNAME}-*" "Name=instance-state-name,Values=stopped" --query Reservations[*].Instances[*].InstanceId --region ${REGION} --output text)
+----
+
+=== Recovering the cluster
+
+If the cluster missed the initial 24 hour certicate rotation all nodes in the cluster will be in `NotReady` state. Validate if any nodes are in NotReady. Note that immediately after waking up the cluster the nodes may show `Ready` - but will switch to `NotReady` within a few seconds
+
+[source,sh]
+----
+oc get nodes
+----
++
+.Sample Output
+[source,texinfo]
+----
+NAME                                         STATUS   ROLES    AGE   VERSION
+ip-10-0-132-82.us-east-2.compute.internal    NotReady worker   18h   v1.14.0+b985ea310
+ip-10-0-134-223.us-east-2.compute.internal   NotReady master   19h   v1.14.0+b985ea310
+ip-10-0-147-233.us-east-2.compute.internal   NotReady master   19h   v1.14.0+b985ea310
+ip-10-0-154-126.us-east-2.compute.internal   NotReady worker   18h   v1.14.0+b985ea310
+ip-10-0-162-210.us-east-2.compute.internal   NotReady master   19h   v1.14.0+b985ea310
+ip-10-0-172-133.us-east-2.compute.internal   NotReady worker   18h   v1.14.0+b985ea310
+----
+
+If all nodes show `NotReady` the nodes will start issuing Certificate Signing Requests. Repeat the following command until you see a CSR for each node in the cluster with `Pending` in the *Condition* column.
+
+[source,sh]
+----
+oc get csr
+----
+
+Once you see the CSRs they need to be approved. The following command approves all outstanding CSRs.
+
+[source,sh]
+----
+oc get csr -oname | xargs oc adm certificate approve
+----
+
+When you double check the CSRs (using `oc get csr`) you should now see that the CSRs have now been `Approved` and `Issued` (again in the *Condition* column).
+
+Double check that all nodes now show `Ready`. Note that this may take a few seconds after approving the CSRs.
+
+[source,sh]
+----
+oc get nodes
+----
++
+.Sample Output
+[source,texinfo]
+----
+NAME                                         STATUS   ROLES    AGE   VERSION
+ip-10-0-132-82.us-east-2.compute.internal    Ready    worker   18h   v1.14.0+b985ea310
+ip-10-0-134-223.us-east-2.compute.internal   Ready    master   19h   v1.14.0+b985ea310
+ip-10-0-147-233.us-east-2.compute.internal   Ready    master   19h   v1.14.0+b985ea310
+ip-10-0-154-126.us-east-2.compute.internal   Ready    worker   18h   v1.14.0+b985ea310
+ip-10-0-162-210.us-east-2.compute.internal   Ready    master   19h   v1.14.0+b985ea310
+ip-10-0-172-133.us-east-2.compute.internal   Ready    worker   18h   v1.14.0+b985ea310
+----
+
+Your cluster is now fully ready to be used again.ß
