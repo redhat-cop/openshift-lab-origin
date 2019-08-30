@@ -213,7 +213,7 @@ export CLUSTERNAME=cluster-${GUID}
 aws ec2 stop-instances --region ${REGION} --instance-ids $(aws ec2 describe-instances --filters "Name=tag:Name,Values=${CLUSTERNAME}-*" "Name=instance-state-name,Values=running" --query Reservations[*].Instances[*].InstanceId --region ${REGION} --output text)
 ----
 
-=== Starting the cluster VMs
+== Starting the cluster VMs
 
 Use the tools native to the cloud environment that your cluster is running on to start the VMs.
 
@@ -227,7 +227,7 @@ export CLUSTERNAME=cluster-${GUID}
 aws ec2 start-instances --region ${REGION} --instance-ids $(aws ec2 describe-instances --filters "Name=tag:Name,Values=${CLUSTERNAME}-*" "Name=instance-state-name,Values=stopped" --query Reservations[*].Instances[*].InstanceId --region ${REGION} --output text)
 ----
 
-=== Recovering the cluster
+== Recovering the cluster
 
 If the cluster missed the initial 24 hour certicate rotation some nodes in the cluster may be in `NotReady` state. Validate if any nodes are in NotReady. Note that immediately after waking up the cluster the nodes may show `Ready` - but will switch to `NotReady` within a few seconds.
 
@@ -284,3 +284,9 @@ ip-10-0-172-133.us-east-2.compute.internal   Ready    worker   18h   v1.14.0+b98
 ----
 
 Your cluster is now fully ready to be used again.
+
+== Summary
+
+Following this process enables you to stop OpenShift 4 Cluster VMs right after installation without having to wait for the 24h certificate rotation to occur.
+
+It also enables you to resume Cluster VMs that have been stopped while the 24h certificate rotation would have occurred.
