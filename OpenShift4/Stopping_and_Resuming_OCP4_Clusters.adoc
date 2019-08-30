@@ -285,6 +285,35 @@ ip-10-0-172-133.us-east-2.compute.internal   Ready    worker   18h   v1.14.0+b98
 
 Your cluster is now fully ready to be used again.
 
+== Ansible Playbook to recover cluster
+
+The following Ansible Playbook should recover a cluster after wake up. Note the 5 minute sleep to give the nodes enough time to settle, start all pods and issue CSRs.
+
+Prerequisites:
+
+* Ansible installed
+* Current user either has a `.kube/config` that grants cluster-admin permissions or a `KUBECONFIG` environment variable set that points to a kube config file with cluster-admin permissions.
+* OpenShift Command Line interface (`oc`) in the current user's PATH.
+
+[source,yaml]
+----
+- name: Run cluster recover actions
+  hosts: localhost
+  connection: local
+  gather_facts: False
+  become: no
+  tasks:
+  - name: Wait 5 minutes for Nodes to settle and pods to start
+    pause:
+      minutes: 5
+  - name: Get Node Readiness status
+    shell: "oc get nodes|grep -v AGE|awk -c '{print $2}'"
+    register: r_nodestatus
+  - name: Approve CSRs if Nodes show NotReady
+    when: "'NotReady' in r_nodestatus.stdout_lines"
+    shell: "oc get csr -oname | xargs oc adm certificate approve"
+----
+
 == Summary
 
 Following this process enables you to stop OpenShift 4 Cluster VMs right after installation without having to wait for the 24h certificate rotation to occur.
