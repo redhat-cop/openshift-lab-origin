@@ -1,16 +1,24 @@
-== Enabling OpenShift 4 Clusters for Stop/Resume
+= Enabling OpenShift 4 Clusters to Stop and Resume Cluster VMs
 
-When installing OpenShift 4 clusters a bootstrap certificate is created that is used to encrypt the communication between nodes and masters.
+There are a lot of reasons to stop and resume OpenShift Cluster VMs:
 
-This certificate is rotated once 24 hours after cluster installation and then again every 30 days.
+* Save money on cloud hosting costs
+* Use a cluster only during daytime hours - for example for exploratory or development work. If this is a cluster for just one person it does not need to be running when the only user is not using it.
+* Deploy a few clusters for students ahead of time when teaching a workshop / class. And making sure that the clusters have prerequisites installed ahead of time.
 
-Missing this certificate rotation renders the cluster unusable. This requires clusters to be running at least 25 hours after installation before they can be shut down to save cloud hosting costs.
+== Background
 
-The following process allows for cluster shutdown right after installation. It will also allow for cluster resume at any time. Note that this process *only* works up until the 30 day certificate rotation. But for most test / development / classroom / etc. clusters this will be a usable approach because these types of clusters are usually rather short lived.
+When installing OpenShift 4 clusters a bootstrap certificate is created that is used on the master nodes to create certificate signing requests (CSRs) for a client certificate that will be used to identify a kubelet on any node.
 
-=== Preparing the Cluster for Shutdown
+Because certificates can not be revoked, this certificate is made with a short expire time and 24 hours after cluster installation, it can not be used again. All nodes other than the master nodes have a service account token which is revocable. Therefore the bootstrap certificate is rotated once 24 hours after cluster installation and then again every 30 days. 
 
-These steps will enable a successful restart of a cluster after it has been shut down.
+Missing this certificate rotation renders the cluster unusable. This requires an OpenShift 4 cluster to be running for at least 25 hours after installation before it can be shut down.
+
+The following process enables cluster shutdown right after installation. It also enables cluster resume at any time. Note that this process *only* works up until the 30 day certificate rotation. But for most test / development / classroom / etc. clusters this will be a usable approach because these types of clusters are usually rather short lived.
+
+== Preparing the Cluster to support stopping of VMs
+
+These steps will enable a successful restart of a cluster after its VMs have been stopped. This process has been tested on OpenShift 4.1.11 and higher - including developer preview builds of OpenShift 4.2.
 
 . From the VM that you ran the OpenShift installer from create the following DaemonSet manifest.
 +
@@ -142,7 +150,7 @@ oc apply -f $HOME/kubelet-bootstrap-cred-manager-ds.yaml.yaml
 oc delete secrets/csr-signer-signer secrets/csr-signer -n openshift-kube-controller-manager-operator 
 ----
 +
-This will trigger three Cluster Operators to re-create these secrets. You can watch as the operators switch from Progressing=False to Progressing=True back to Progressing=False. The three operators that will cycle are `kube-apiserver`, `openshift-controller-manager` and `kube-controller-manager`. 
+This will trigger the Cluster Operators to re-create these secrets. You can watch as various operators switch from Progressing=False to Progressing=True and back to Progressing=False. The operators that will cycle are `kube-apiserver`, `openshift-controller-manager`, `kube-controller-manager` and `monitoring`.
 +
 [source,sh]
 ----
@@ -184,20 +192,30 @@ storage                                    4.2.0-0.nightly-2019-08-27-072819   T
 +
 Once all Cluster Operators show *Available=True*, *Progressing=False* and *Degraded=False* the cluster is ready for shutdown.
 
-=== Shutting down the cluster
+== Stoppping the cluster VMs
 
-Any way to stop the VMs making up the cluster works.
+Use the tools native to the cloud environment that your cluster is running on to shut down the VMs.
 
-The following command will shut down the VMs that make up a cluster on Amazon Web Services. This command needs the `awscli` command to be installed. Make sure that *REGION* points to the region your VMs are deployed in. This also assumes that $HOME/.aws/credentials has the proper AWS credentials available to execute the command. Also this command assumes that your *Cluster Name* is set to `cluster-${GUID}`.
+The following command will shut down the VMs that make up a cluster on Amazon Web Services.
+
+Prerequisites:
+
+* The Amazon Web Services Command Line Interface, `awscli`, is installed.
+* $HOME/.aws/credentials has the proper AWS credentials available to execute the command.
+* *REGION* points to the region your VMs are deployed in.
+* *CLUSTERNAME* is set to the Cluster Name you used during installation. For example `cluster-${GUID}`.
 
 [source,sh]
 ----
 export REGION=us-east-2
 export CLUSTERNAME=cluster-${GUID}
+
 aws ec2 stop-instances --region ${REGION} --instance-ids $(aws ec2 describe-instances --filters "Name=tag:Name,Values=${CLUSTERNAME}-*" "Name=instance-state-name,Values=running" --query Reservations[*].Instances[*].InstanceId --region ${REGION} --output text)
 ----
 
-=== Starting the cluster
+=== Starting the cluster VMs
+
+Use the tools native to the cloud environment that your cluster is running on to start the VMs.
 
 The following commands will start the cluster VMs in Amazon Web Services.
 
@@ -205,12 +223,13 @@ The following commands will start the cluster VMs in Amazon Web Services.
 ----
 export REGION=us-east-2
 export CLUSTERNAME=cluster-${GUID}
+
 aws ec2 start-instances --region ${REGION} --instance-ids $(aws ec2 describe-instances --filters "Name=tag:Name,Values=${CLUSTERNAME}-*" "Name=instance-state-name,Values=stopped" --query Reservations[*].Instances[*].InstanceId --region ${REGION} --output text)
 ----
 
 === Recovering the cluster
 
-If the cluster missed the initial 24 hour certicate rotation all nodes in the cluster will be in `NotReady` state. Validate if any nodes are in NotReady. Note that immediately after waking up the cluster the nodes may show `Ready` - but will switch to `NotReady` within a few seconds
+If the cluster missed the initial 24 hour certicate rotation some nodes in the cluster may be in `NotReady` state. Validate if any nodes are in NotReady. Note that immediately after waking up the cluster the nodes may show `Ready` - but will switch to `NotReady` within a few seconds.
 
 [source,sh]
 ----
@@ -229,7 +248,7 @@ ip-10-0-162-210.us-east-2.compute.internal   NotReady master   19h   v1.14.0+b98
 ip-10-0-172-133.us-east-2.compute.internal   NotReady worker   18h   v1.14.0+b985ea310
 ----
 
-If all nodes show `NotReady` the nodes will start issuing Certificate Signing Requests. Repeat the following command until you see a CSR for each node in the cluster with `Pending` in the *Condition* column.
+If some nodes show `NotReady` the nodes will start issuing Certificate Signing Requests (CSRs). Repeat the following command until you see a CSR for each NotReady node in the cluster with `Pending` in the *Condition* column.
 
 [source,sh]
 ----
