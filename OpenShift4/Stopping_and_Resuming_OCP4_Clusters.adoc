@@ -9,17 +9,19 @@ There are a lot of reasons to stop and resume OpenShift Cluster VMs:
 == Background
 
 When installing OpenShift 4 clusters a bootstrap certificate is created that is used on the master nodes to create
-certificate signing requests (CSRs) for a client certificate that will be used to identify a kubelet on any node.
+certificate signing requests (CSRs) for kubelet client certificates (one for each kubelet) that will be used to identify each kubelet on any node.
 
 Because certificates can not be revoked, this certificate is made with a short expire time and 24 hours after cluster
 installation, it can not be used again. All nodes other than the master nodes have a service account token which is
-revocable. Therefore the bootstrap certificate is rotated once 24 hours after cluster installation and then again
+revocable. Therefore the bootstrap certificate is only valid for 24 hours after cluster installation. After then again
 every 30 days.
 
-Missing this certificate rotation renders the cluster unusable. This requires an OpenShift 4 cluster to be running for
+If the master kubelets do not have a 30 day client certificate (the first only lasts 24 hours), then missing the kubelet
+client certificate refresh window renders the cluster unusable because the bootstrap credential cannot be used when the
+cluster is woken back up. Practically, this requires an OpenShift 4 cluster to be running for
 at least 25 hours after installation before it can be shut down.
 
-The following process enables cluster shutdown right after installation. It also enables cluster resume at any time.
+The following process enables cluster shutdown right after installation. It also enables cluster resume at any time in the next 30 days.
 Note that this process *only* works up until the 30 day certificate rotation. But for most test / development / classroom / etc.
 clusters this will be a usable approach because these types of clusters are usually rather short lived.
 
@@ -28,7 +30,8 @@ clusters this will be a usable approach because these types of clusters are usua
 These steps will enable a successful restart of a cluster after its VMs have been stopped. This process has been tested
 on OpenShift 4.1.11 and higher - including developer preview builds of OpenShift 4.2.
 
-. From the VM that you ran the OpenShift installer from create the following DaemonSet manifest.
+. From the VM that you ran the OpenShift installer from create the following DaemonSet manifest.  This DaemonSet pulls down
+the same service account token bootstrap credential used on all the non-master nodes in the cluster.
 +
 [source,sh]
 ----
@@ -158,7 +161,8 @@ oc apply -f $HOME/kubelet-bootstrap-cred-manager-ds.yaml.yaml
 oc delete secrets/csr-signer-signer secrets/csr-signer -n openshift-kube-controller-manager-operator 
 ----
 +
-This will trigger the Cluster Operators to re-create these secrets. You can watch as various operators switch from
+This will trigger the Cluster Operators to re-create the CSR signer secrets which are used when the cluster starts
+back up to sign the kubelet client certificate CSRs. You can watch as various operators switch from
 Progressing=False to Progressing=True and back to Progressing=False. The operators that will cycle are
 `kube-apiserver`, `openshift-controller-manager`, `kube-controller-manager` and `monitoring`.
 +
