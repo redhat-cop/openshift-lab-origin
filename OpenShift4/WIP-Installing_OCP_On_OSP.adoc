@@ -1,0 +1,419 @@
+== Installing OpenShift on Red Hat OpenStack
+
+This lab uses the _ShiftStack_ solution to do an IPI install of OpenShift 4.2 onto Red Hat OpenStack 13.
+
+With OpenStack, the infrascture layer (IaaS) is your responsibility to design, build, and maintain. This means there are a few additional steps and considerations that you may need to address that you might not have to with certain public cloud provider.
+
+Much of this guide was built using the upstream link:https://github.com/openshift/installer/blob/master/docs/user/openstack/README.md[installer documentation].
+
+=== Prerequisites
+
+Following the prerequisites is important. You need to make sure you have:
+* Quotas
+* RHCOS image
+* DNS resolver
+* Flavors
+* Swift
+* DNS
+
+==== Quotas
+Resources in an OpenStack cluster, or the public cloud, are not unlimited, so make sure you have a reasonable amount of quota for your cluster deployment. Here are the guidelines for the minimums needed to deploy a recommended configuration. Make sure the project created for you has at least this in place.
+
+[cols=2]
+|====
+|Floating IPs |2 (API & ingress)
+|Security Groups |3
+|Security Group Rules |60
+|Routers |1
+|Subnets |1
+|RAM |112 GB
+|vCPUs |28
+|Volume Storage |175 GB
+|Instances |7
+|Swift containers |2 (ignition and registry?)
+|Swift objects |1
+|Available space in Swift: at least 10 MB (ignition)
+|====
++
+NOTE: This will allow for 3x masters, 3x workers, and 1x bootstrap. Any additional nodes would require additional quotas.
+
+==== Flavors
+There are 3 types of instances that `openshift-install` will deploy. Due to the way the installer works, you will only create 2 unique flavors. Additional flavors can be added and can be used once the cluster is deployed. To do this, you would leverage the machine API and specify a different flavor for different node types. 
+
+[cols=3]
+|====
+|Purpose |Size (CPUxMEMxDISK) | Flavor name
+|Bootstrap |4x16x50 |ocp4-master
+|Master |4x16x50 |ocp4-master
+|Worker |2x8x50 |ocp4-worker
+|====
+
+Notice that you are using only 2 unique flavors here. Because the `bootstrap` instance will only live for a short duration, there is really no reason to create another flavor just for it. The recommended sizing for the bootstrap instance matches the masters.
+
+To create these, you'd need to have administrative permission on the OpenStack cluster. If you are using a GPTE OpenStack cluster, these flavors have already been created. If you are running on another OpenStack cluster, please consult the OpenStack documentation on how to create new flavors.
+
+==== Swift
+Swift object storage is required for this deployment. The deployment of Swift itself is far outside the scope of this document and it is assumed that Swift is deployed and functional in the OpenStack cluster.
+
+Swift is used for 2 purposes. The first, hosting the `ignition` file for the `bootstrap` instance, is required. It is a very small file but essential for getting RHCOS started on the `bootstrap` instance. The second purpose, which is optional, is for hosting the registry storage. The amount of capacity you'd need for this will depend on the estimated amount of container images you need.
+
+Since Swift is installed, you will need permission in your project to use it. Contact your administrator and ask to have the `swiftoperator` role added to your user for your project.
+
+Finally, in Swift, you need to have `temp-url` support enabled for your object store account. This is used when passing the URL for the `bootstrap.ign` ignition file. It will be a customer URL with an expiration time. You can enable `temp-url` support by running the following command:
++
+[source,subs="{markup-in-source}"]
+----
+openstack object store account set --property Temp-URL-Key=<my-made-up-key>
+----
++
+* This will set this property on the object storage account associated with your project
+* You can set your key to whatever you want
+
+Verify that it is set by running:
++
+[source,subs="{markup-in-source}"]
+----
+openstack object store account show
+----
++
+.Sample Output
+[source,subs="{markup-in-source}"]
+----
++------------+-------------------------------------------------+
+| Field      | Value                                           |
++------------+-------------------------------------------------+
+| Account    | AUTH_45fffb2e00db41bb9623dcedb6359c97           |
+| Bytes      | 300916                                          |
+| Containers | 1                                               |
+| Objects    | 1                                               |
+| properties | Temp-Url-Key='myveryownkey'                     |
++------------+-------------------------------------------------+
+----
+
+==== DNS Resolver
+At a cluster level, another prerequisite that is not well documented is DNS resolvers. When a cluster is bootstrapping, one of the first things the bootstrap node does is connect to quay.io to pull some contianer images. The default behaviour of the OpenShift installer for the OpenStack provider relies on the DHCP agents to be the resolvers for the instances.
++
+[source,subs="{markup-in-source}"]
+----
+*cat /etc/resolv.conf*
+----
++
+.Sample Output
+[source,subs="{markup-in-source}"]
+----
+# Generated by NetworkManager
+search stencell.example.opentlc.com
+nameserver 127.0.0.1
+nameserver 10.0.0.11
+nameserver 10.0.0.10
+# NOTE: the libc resolver may not support more than 3 nameservers.
+# The nameservers listed below may not be recognized.
+nameserver 10.0.0.12
+----
+
+If your OpenStack deployment is not set up to provide this service, your cluster never starts. You will see something like this on the bootstrap instance:
++
+[source,subs="{markup-in-source}"]
+----
+*systemctl status release-image.service
+----
++
+.Sample Output
+[source,subs="{markup-in-source}"]
+----
+● release-image.service - Download the OpenShift Release Image
+   Loaded: loaded (/etc/systemd/system/release-image.service; static; vendor preset: disabled)
+   Active: activating (start) since Mon 2019-09-09 22:28:05 UTC; 14h ago
+ Main PID: 1472 (bash)
+    Tasks: 18 (limit: 26213)
+   Memory: 383.2M
+   CGroup: /system.slice/release-image.service
+           ├─ 1472 bash /usr/local/bin/release-image-download.sh
+           └─26735 podman pull --quiet quay.io/openshift-release-dev/ocp-release-nightly@sha256:a54be8d02a512e42805c8103fb996191b83611d5486d205d0cee1757e7817f4d
+
+Sep 10 12:50:30 stencell-h7tch-bootstrap release-image-download.sh[1472]: Pull failed. Retrying quay.io/openshift-release-dev/ocp-release-nightly@sha256:a54be8d02a512e42805c8103fb996191b83611d5486d205d0cee1757e7817f4d...
+Sep 10 12:50:30 stencell-h7tch-bootstrap release-image-download.sh[1472]: time="2019-09-10T12:50:30Z" level=error msg="Error pulling image ref //quay.io/openshift-release-dev/ocp-release-nightly@sha256:a54be8d02a512e42805c8103fb9961>
+Sep 10 12:50:30 stencell-h7tch-bootstrap release-image-download.sh[1472]: Error: error pulling image "quay.io/openshift-release-dev/ocp-release-nightly@sha256:a54be8d02a512e42805c8103fb996191b83611d5486d205d0cee1757e7817f4d": unable>
+----
+
+This is because you cannot resolve the IP address for quay.io.
+
+==== RHCOS Image
+An RHCOS image is necessary to build an OpenShift cluster. In public cloud environments, this is just published, but in OpenStack, you need to create the Glance image. There are two ways to get this.
+
+The first (and preferred solution) is to pull a copy from the OpenShift mirror download site: link:https://mirror.openshift.com/pub/openshift-v4/dependencies/rhcos/pre-release/latest/[].
++
+WARNING: Make sure the image you download is the `*-openstack.qcow2` version. Each of these images is built for a specific platform and has the `ignition.platform.id` set. If you pull the wrong image, `ignition` won't know the right place to get the `bootstrap.ign` from.
+
+The second option is to identify the RHCOS version pinned to the installer you are using. You can do this by following these steps.
+
+. Get the commit of the `openshift-install` you are using.
++
+[source,subs="{markup-in-source}"]
+----
+openshift-install version
+----
++
+.Sample Output
+[source,subs="{markup-in-source}"]
+----
+openshift-install v4.2.0
+built from commit 8c9abe40f7616303c03cafdc9ad612cd8fa7bd6b
+release image quay.io/openshift-release-dev/ocp-release-nightly@sha256:a54be8d02a512e42805c8103fb996191b83611d5486d205d0cee1757e7817f4d
+----
++
+* From the output above, you will need the commit. 
+
+. Open a web browser and navigate to https://github.com/openshift/installer/blob/<commit-from-above>/data/data/rhcos.json#L5
++
+WARNING: Make sure you replace the <commit-from-above> portion of the URL with the commit from the previous step.
++
+* This gives you the `baseURI` for the RHCOS image for your release of `openshift-install`.
+
+. Scroll down a bit to find the `openstack` platform and copy the path. It will look like this:
++
+[source,subs="{markup-in-source}"]
+----
+rhcos-42.80.20190827.1-openstack.qcow2
+----
+
+. Use the `baseURI` + path and download that to your workstation.
+
+. Make sure you are logged into OpenStack.
++
+[source,subs="{markup-in-source}"]
+----
+source <your-user>-rc.sh
+----
++
+* Provide your password when prompted
+* This will set several environment variables, including your password in clear text
+* This is required to run `openstack` commands
+
+. Using the `openstack` cli, create the Glance image.
++
+[source,subs="{markup-in-source}"]
+----
+openstack image create --container-format=bare --disk-format=qcow2 --property description="rhcos-42.80.20190827.1" --file <rhcos-image-you-downloaded> rhcos
+----
++
+* The name of the image should be set to `rhcos`, but you can add other information in the description to show the exact version of RHCOS.
++
+TIP: Depending on where you are running the `openstack` commands from, you may need to use `sudo -E`. This will preserve your environment variables.
+
+. Verify that your image was successfully uploaded
++
+[source,subs="{markup-in-source}"]
+----
+openstack image list | grep rhcos
+----
+
+==== DNS
+To communicate with your OpenShift API and applications from outside of the cluster, you rely on floating IPs. You need to create DNS entries for these FIPs. There are two entries that are required.
+
+The FIP used for the API. This is what you will use to interact programatically with OpenShift.
+
+The FIP used for the ingress traffic. This is how all of the workloads on your cluster will be accessed from the outside.
+
+Especially for the API, it is a good idea to do this now. You will need to know the FIP that you are using for this ahead of time anyhow. While you don't need to identify the FIP for the ingress traffic ahead of time, you can create the entry now to save time later.
+
+
+
+Once you have these prerequisites completed, you are ready to move onto the OpenShift installation!
+
+=== Installing OpenShift
+The following section will guide you through installing OpenShift on OpenStack using the IPI method that will be available in OpenShift 4.2.
+
+. On your `ClientVM`, retrieve the latest versions of `openshift-install` and `oc`.
++
+[source,subs="{markup-in-source}"]
+----
+wget https://mirror.openshift.com/pub/openshift-v4/clients/ocp-dev-preview/latest/openshift-client-linux-4.2.0-0.nightly-2019-09-10-132016.tar.gz
+wget https://mirror.openshift.com/pub/openshift-v4/clients/ocp-dev-preview/latest/openshift-install-linux-4.2.0-0.nightly-2019-09-10-132016.tar.gz
+----
++
+TIP: You should look up the current `latest` version that you download. You can find them on the link:https://mirror.openshift.com/pub/openshift-v4/clients/ocp-dev-preview/latest/[OpenShift mirror].
+
+. Extract these tarballs.
++
+[source,subs="{markup-in-source}"]
+----
+sudo tar xzf openshift-client-linux-4.2.0-0.nightly-2019-09-10-132016.tar.gz -C /usr/local/bin/
+sudo tar xzf openshift-install-linux-4.2.0-0.nightly-2019-09-10-132016.tar.gz -C /usr/local/bin/
+rm -f openshift-*.gz
+----
++
+TIP: If you downloaded a different version in the previous step, be sure to update your commands here.
+
+. Create a `clouds.yaml` file. This is required by `openshift-install` so that it knows how to connect to the OpenStack cluster and deploy everything. The easiest way to do this is download the generated one from OpenStack. You can do this from the `Project > API Access` menu. Click on the *Download OpenStack RC File* to download `clouds.yaml`.
+
+. Copy the `clouds.yaml` file to `$HOME/.config/openstack/clouds.yaml` on your `ClientVM` where you will be running the `openshift-install`. Your file will look like this:
++
+[source,subs="{markup-in-source}"]
+----
+clouds:
+  gpte-openstack:
+    auth:
+      auth_url: http://169.45.205.100:5000/v3
+      username: "nate"
+      password: "mypassword"
+      project_id: 45fffb2e00db41bb9623dcedb6359c97
+      project_name: "nstephan"
+      user_domain_name: "Default"
+    region_name: "regionOne"
+    interface: "public"
+    identity_api_version: 3
+----
++
+WARNING: This is an example file. Yours will be different.
+
+. Run the installer to create the `install-config.yaml`.
++
+[source,subs="{markup-in-source}"]
+----
+openshift-install create install-config --dir osp-cluster
+----
++
+.Sample Output
+[source,subs="{markup-in-source}"]
+----
+? Platform openstack <1>
+? Cloud gpte-openstack <2>
+? Region regionOne <3>
+? ExternalNetwork external <4>
+? APIFloatingIPAddress 169.45.205.101 <5>
+? FlavorName ocp4-master <6>
+? Base Domain example.opentlc.com
+? Cluster Name stencell
+? Pull Secret [? for help]
+----
+<1> You will get a list of available cloud providers. Choose `openstack`.
+<2> The list of clouds available come from your `clouds.yaml` file.
+<3> The list of regions available come from your `clouds.yaml` file.
+<4> All external networks that are visibile to you will show up in this list. Choose `external`.
+<5> A list of _Floating IPs (FIP)_ will be visibile in this list. Choose the FIP that you will use for the OpenShift API.
+<6> All flavors that you have access to in the OpenStack cluster will be visibile in this list. Choose `ocp4-master`, but you will change this.
+<7> The base domain should be will form the base of your cluster name and URLs.
+<8> The cluster name will used for naming the cluster and forming the DNS name for the cluster. It will follow the format of <cluster-name>.<base-domain>.
+<9> Use your pull secret from link:https://try.openshift.com[].
+
+. Edit your `$HOME/osp-cluster/install-config.yaml` file to update with correct flavor types and your pulbic ssh key. Your file should look similar to this, but with your specific options for cluster name, FIP, etc.
++
+.Sample Output
+[source,subs="{markup-in-source}"]
+----
+apiVersion: v1
+baseDomain: example.opentlc.com
+compute:
+- hyperthreading: Enabled
+  name: worker
+  platform:
+    openstack:
+      type: ocp4-worker
+  replicas: 2
+controlPlane:
+  hyperthreading: Enabled
+  name: master
+  platform:
+    openstack:
+      type: ocp4-master
+  replicas: 3
+metadata:
+  creationTimestamp: null
+  name: stencell
+networking:
+  clusterNetwork:
+  - cidr: 10.128.0.0/14
+    hostPrefix: 23
+  machineCIDR: 10.0.0.0/16
+  networkType: OpenShiftSDN
+  serviceNetwork:
+  - 172.30.0.0/16
+platform:
+  openstack:
+    cloud: gpte-openstack
+    computeFlavor: ocp4-master
+    externalNetwork: external
+    lbFloatingIP: 169.45.205.120
+    octaviaSupport: "0"
+    region: regionOne
+    trunkSupport: "1"
+pullSecret: <your-pull-secret>
+sshKey: <your-public-sshkey>
+----
++
+* The key changes you are making are:
+** Add the `sshKey` at the end of the file
+** Set `platform.openstack.type` to `ocp4-worker` for the `compute` nodes
+** Set `platform.openstack.type` to `ocp4-master` for the `controlPlane` nodes
++
+WARNING: The same above is NOT what you should use. Your values WILL be different.
+
+. Make a backup of your `install-config.yaml`.
++
+[source,subs="{markup-in-source}"]
+----
+cp osp-cluster/install-config.yaml $HOME
+----
+
+. Run the `openshift-install` to build your OpenShift cluster.
++
+[source,subs="{markup-in-source}"]
+----
+openshift-install create cluster --dir osp-cluster --log-level debug
+----
+
+. Open another SSH session to your `ClientVM`.
+
+. Source your OpenStack credentials
++
+[source,subs="{markup-in-source}"]
+----
+source <your-user>-rc.sh
+----
+
+. Get a list of OpenStack instances
++
+[source,subs="{markup-in-source}"]
+----
+openstack server list
+----
++
+.Sample Output
+[source,subs="{markup-in-source}"]
+----
++--------------------------------------+--------------------------+--------+----------------------------------------------------+-------+-------------+
+| ID                                   | Name                     | Status | Networks                                           | Image | Flavor      |
++--------------------------------------+--------------------------+--------+----------------------------------------------------+-------+-------------+
+| 38b95b87-660e-46cc-8a5b-c0efcdad07e6 | stencell-rdgpg-master-2  | ACTIVE | stencell-rdgpg-openshift=10.0.0.17                 | rhcos | ocp4-master |
+| 5d5d43ef-4b1e-4c04-8b5f-872d3848e98e | stencell-rdgpg-master-0  | ACTIVE | stencell-rdgpg-openshift=10.0.0.19                 | rhcos | ocp4-master |
+| 7333543f-361c-4070-b4a9-9ce41b713271 | stencell-rdgpg-master-1  | ACTIVE | stencell-rdgpg-openshift=10.0.0.13                 | rhcos | ocp4-master |
+| 5f43153f-48fc-4847-a9e8-44101c807d63 | stencell-rdgpg-bootstrap | ACTIVE | stencell-rdgpg-openshift=10.0.0.20, 169.45.205.123 | rhcos | ocp4-master |
++--------------------------------------+--------------------------+--------+----------------------------------------------------+-------+-------------+
+----
+
+. Once your list of instances looks similar to the above sample, ssh into your bootstrap instance to observce the bootstraping process.
++
+[source,subs="{markup-in-source}"]
+----
+ssh -i ~/.ssh/id_rsa core@169.45.205.123
+----
++
+* Make sure you use the FIP, not the IP that starts with 10.x.
+
+. On your bootstrap node, run the following command to follow the `bootkube` logs.
++
+[source,subs="{markup-in-source}"]
+----
+journalctl -b -f -u bootkube.service
+----
++
+.Sample Output
+[source,subs="{markup-in-source}"]
+----
+
+----
++
+TIP: If your `bootkube` service isn't showing any logs, you may have a problem. Check the status of the `release-image.service` and you might see that the node can't resolve `quay.io` to download images. This is due to a bug in the current deployment of the OSP cluster. You can work around this by temporarily adding `nameserver 1.1.1.` to your `/etc/resolv.conf` on the bootstrap instance.
+
+. The cluster install will take anywhere from 30-45 minutes.
