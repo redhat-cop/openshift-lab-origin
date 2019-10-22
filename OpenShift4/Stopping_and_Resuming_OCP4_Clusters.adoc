@@ -26,7 +26,7 @@ These steps will enable a successful restart of a cluster after its VMs have bee
 +
 [source,sh]
 ----
-cat << EOF >$HOME/kubelet-bootstrap-cred-manager-ds.yaml.yaml
+cat << 'EOF' >$HOME/kubelet-bootstrap-cred-manager-ds.yaml.yaml
 apiVersion: apps/v1
 kind: DaemonSet
 metadata:
@@ -57,9 +57,9 @@ spec:
             while true; do
               unset KUBECONFIG
 
-              echo "----------------------------------------------------------------------"
+              echo "---------------------------------"
               echo "Gather info..."
-              echo "----------------------------------------------------------------------"
+              echo "---------------------------------"
               # context
               intapi=$(oc get infrastructures.config.openshift.io cluster -o "jsonpath={.status.apiServerInternalURI}")
               context="$(oc --config=/etc/kubernetes/kubeconfig config current-context)"
@@ -71,9 +71,9 @@ spec:
               namespace="$(oc get secret -n openshift-machine-config-operator node-bootstrapper-token  -o "jsonpath={.data.namespace}" | base64 --decode)"
               token="$(oc get secret -n openshift-machine-config-operator node-bootstrapper-token -o "jsonpath={.data.token}" | base64 --decode)"
 
-              echo "----------------------------------------------------------------------"
+              echo "---------------------------------"
               echo "Generate kubeconfig"
-              echo "----------------------------------------------------------------------"
+              echo "---------------------------------"
 
               export KUBECONFIG="$(mktemp)"
               kubectl config set-credentials "kubelet" --token="$token" >/dev/null
@@ -82,28 +82,28 @@ spec:
               kubectl config set-context kubelet --cluster="$cluster" --user="kubelet" >/dev/null
               kubectl config use-context kubelet >/dev/null
 
-              echo "----------------------------------------------------------------------"
+              echo "---------------------------------"
               echo "Print kubeconfig"
-              echo "----------------------------------------------------------------------"
+              echo "---------------------------------"
               cat "$KUBECONFIG"
 
-              echo "----------------------------------------------------------------------"
+              echo "---------------------------------"
               echo "Whoami?"
-              echo "----------------------------------------------------------------------"
+              echo "---------------------------------"
               oc whoami
               whoami
 
-              echo "----------------------------------------------------------------------"
+              echo "---------------------------------"
               echo "Moving to real kubeconfig"
-              echo "----------------------------------------------------------------------"
+              echo "---------------------------------"
               cp /etc/kubernetes/kubeconfig /etc/kubernetes/kubeconfig.prev
               chown root:root ${KUBECONFIG}
               chmod 0644 ${KUBECONFIG}
               mv "${KUBECONFIG}" /etc/kubernetes/kubeconfig
 
-              echo "----------------------------------------------------------------------"
+              echo "---------------------------------"
               echo "Sleep 60 seconds..."
-              echo "----------------------------------------------------------------------"
+              echo "---------------------------------"
               sleep 60
             done
         securityContext:
