@@ -294,6 +294,7 @@ The following Ansible Playbook should recover a cluster after wake up. Note the 
 Prerequisites:
 
 * Ansible installed
+* OpenShift Python module installed (`pip install openshift`)
 * Current user either has a `.kube/config` that grants cluster-admin permissions or a `KUBECONFIG` environment variable set that points to a kube config file with cluster-admin permissions.
 * OpenShift Command Line interface (`oc`) in the current user's PATH.
 
@@ -305,19 +306,21 @@ Prerequisites:
   gather_facts: False
   become: no
   tasks:
-  - name: Wait 5 minutes for Nodes to settle and pods to start
+  - name: Wait 3 minutes for Nodes to settle and pods to start
     pause:
-      minutes: 5
+      minutes: 3
 
   - name: Get CSRs that need to be approved
-    command: oc get csr -oname
+    k8s_facts:
+      api_version: certificates.k8s.io/v1beta1
+      kind: CertificateSigningRequest
     register: r_csrs
-    changed_when: false
 
-  - name: Approve all Pending CSRs
-    when: r_csrs.stdout_lines | length > 0
-    command: "oc adm certificate approve {{ item }}"
-    loop: "{{ r_csrs.stdout_lines }}"
+  - when: r_csrs.resources | length > 0
+    name: Approve all Pending CSRs
+    command: "oc adm certificate approve {{ item.metadata.name }}"
+    # when: item.status.conditions[0].type == "Pending"
+    loop: "{{ r_csrs.resources }}"
 ----
 
 == Summary
