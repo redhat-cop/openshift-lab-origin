@@ -336,7 +336,7 @@ The OCS Operator creates a service `noobaa-mgmt` of type LoadBalancer. This howe
 +
 [source,sh]
 ----
-oc create route passthrough noobaa-mgmt1 --service=noobaa-mgmt --port=8443 --insecure-policy='Redirect'
+oc create route passthrough noobaa-mgmt --service=noobaa-mgmt --port=8443 --insecure-policy='Redirect'
 ----
 
 . Retrieve the created route:
