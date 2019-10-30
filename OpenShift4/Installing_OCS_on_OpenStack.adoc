@@ -327,3 +327,49 @@ ocs-storagecluster-cephfs     openshift-storage.cephfs.csi.ceph.com   4h40m
 openshift-storage.noobaa.io   openshift-storage.noobaa.io/obc         86m
 standard (default)            kubernetes.io/cinder                    28h
 ----
+
+== Accessing the NooBaa Dashboard
+
+The OCS Operator creates a service `noobaa-mgmt` of type LoadBalancer. This however doesn't work on (our) OpenStack (cluster).
+
+. Create a route for the NooBaa management application
++
+[source,sh]
+----
+oc create route passthrough noobaa-mgmt1 --service=noobaa-mgmt --port=8443 --insecure-policy='Redirect'
+----
+
+. Retrieve the created route:
++
+[source,sh]
+----
+oc get route
+----
++
+.Sample Output
+[source,texinfo]
+----
+NAME           HOST/PORT                                              PATH   SERVICES      PORT   TERMINATION            WILDCARD
+noobaa-mgmt    noobaa-mgmt-openshift-storage.apps.wk.wkulhanek.com           noobaa-mgmt   8443   passthrough/Redirect   None
+----
+
+. Retrieve the access credentials for NooBaa
++
+[source,sh]
+----
+oc get secret noobaa-admin -n openshift-storage -o json | jq '.data|map_values(@base64d)'
+----
++
+.Sample Output
+[source,texinfo]
+----
+{
+  "AWS_ACCESS_KEY_ID": "<redacted>",
+  "AWS_SECRET_ACCESS_KEY": "<redacted>",
+  "email": "admin@noobaa.io",
+  "password": "<redacted>",
+  "system": "noobaa"
+}
+----
+
+. Use the created Route (in a Chrome compatible browser) to open the NooBaa web interface. Use the `email` and `password` from the secret to log into NooBaa.
