@@ -5,6 +5,7 @@ This document describes how to install OCS on OCP 4 on OpenStack.
 OpenShift Container Storage is a big application. It needs three rather large nodes - the documentation states m4.4xlarge on AWS. I was able to make it work with an `xlarge` instance flavor on our OpenStack Cluster - which has 16 vCPUs and 32Gi of memory.
 
 Your Project Quota needs to be set to at least the following values:
+
 * vCPUs: 100
 * Instances: 10
 * Volumes: 40
