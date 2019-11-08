@@ -1,0 +1,149 @@
+= OpenShift on OpenStack (IPI)
+
+== Installing an IPI cluster on our OpenStack (all from my Mac)
+
+. Install the OpenStack API.
++
+[source,sh]
+----
+pip install python-openstackclient
+----
+
+. Log into OpenStack (either `http://api.blue.osp.opentlc.com` or `http://horizon.red.osp.opentlc.com`)
+. Create a Project
+.. User must have roles `member` and `swiftoperator`
+.. Update Project Quota
+... For regular OpenShift Installs:
+* Memory: 128GB
+* vCPUs: 40
+* Everything else: default values
+... For OpenShift installs with OpenShift Container Storage:
+* Memory: 200Gi
+* vCPUs: 100
+* Total Size of Volumes: 1000Gi
+* Volumes: 40
+* Everything else: default values
+
+. Create the OpenStack configuration file `$HOME/.config/openstack/clouds.yaml`. Make sure the `project_name` and `project_id` matches the values of the project you just created.
++
+[source,yaml]
+----
+clouds:
+  wk-blue:
+    auth:
+      auth_url: http://api.blue.osp.opentlc.com:5000/v3
+      username: "wolfgang"
+      password: <redacted>
+      project_name: "wk"
+      project_id: d04dc3bf375e462fa6a873f0c29db739
+      user_domain_name: "Default"
+    region_name: "regionOne"
+    interface: "public"
+    identity_api_version: 3
+  wk-red:
+    auth:
+      auth_url: http://169.47.188.15:5000/v3
+      username: "wolfgang"
+      password: <redacted>
+      project_name: "wk"
+      project_id: f62e56f3c1244749b05f2c95f6565c0d
+      user_domain_name: "Default"
+    region_name: "regionOne"
+    interface: "public"
+    identity_api_version: 3
+----
+
+. Create two Floating IPs in the project for the loadbalancer and ingress
++
+[source,sh]
+----
+openstack --os-cloud=wk-blue floating ip create external
+openstack --os-cloud=wk-blue floating ip create external
+----
+. Write down the two IP Addresses created (*: 169.47.183.24, API: 169.47.183.28)
+
+. Update DNS Provider to have api.clustername.basedomain and *.apps.clustername.basedomain point to the floating IPs.
+..  I have a domain wkulhanek.com on Namecheap - so basedomain is 'wkulhanek.com' for me
+. Wait until `dig api.clustername.basedomain` returns the correct floating IP address.
+
+. Set options for Swift:
++
+[source,sh]
+----
+openstack --os-cloud wk-blue object store account set --property Temp-URL-Key=superkey
+----
+
+. Create the OpenShift install config file:
++
+[source,sh]
+----
+openshift-install create install-config --dir=./osp-install
+----
++
+.Sample Output
+[source,texinfo]
+----
+? SSH Public Key /Users/wkulhane/.ssh/wkulhane-opentlc-com.pub
+? Platform openstack
+? Cloud wk-blue
+? ExternalNetwork external
+? APIFloatingIPAddress 169.47.183.28
+? FlavorName 4c16g30d
+? Base Domain wkulhanek.com
+? Cluster Name wk
+? Pull Secret [? for help] ************
+----
+
+.  Edit ./osp-install/install-config.yaml (2 workers), make backup file
++
+[source,sh]
+----
+cp ./osp-install/install-config.yaml ./osp-install/install-config.yaml.bak
+----
+
+. Run the OpenShift Install
++
+[source,sh]
+----
+openshift-install create cluster --dir=./osp-install
+----
+
+. After install finishes assign the *.apps floating ip to the cluster ingress. Find the Ingress Port ID (get clusterid from ./osp-install/metatdata.json):
++
+[source,sh]
+----
+openstack --os-cloud=wk-blue port show <clustername>-<clusterid>-ingress-port
+----
+
+. Set the Floating IP to the Ingress Port using the Ingress Port ID:
++
+[source,sh]
+----
+openstack --os-cloud=wk-blue floating ip set --port <ingress-port-id> <floating_ip_address>
+----
+
+. This creates an OpenShift on OpenStack IPI cluster where MachineSets work (and everything else as far as I can tell).
+
+== Uninstalling OpenShift
+
+. Release the Floating IP for the *.apps domain.
++
+[source,sh]
+----
+openstack --os-cloud=wk-blue floating ip list --port d25ffc4a-722f-4f0d-91d4-20394f9d570b
+openstack --os-cloud=wk-blue floating ip unset --port 71ae5b92-6d8a-4a90-9148-55e723b9dda3
+----
+
+. Uninstall the cluster:
++
+[source,sh]
+----
+openshift-install destroy cluster --dir=./osp-install
+----
+
+. Delete the two Floating IPs (for API and *.apps):
++
+[source,sh]
+----
+
+----
