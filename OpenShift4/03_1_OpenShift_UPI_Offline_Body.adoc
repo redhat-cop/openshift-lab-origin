@@ -1,7 +1,25 @@
 :labname: OpenShift UPI Disconnected Deployment
 :markup-in-source: verbatim,attributes,quotes
-include::../../tools/00_0_Lab_Header.adoc[]
+// Course Properties
+:course_name: Advanced Red Hat OpenShift Container Platform Deployment and Management
+// OpenTLC Portal
+:opentlc_portal: link:https://labs.opentlc.com/[OPENTLC lab portal^]
+:opentlc_account_management: link:https://www.opentlc.com/account/[OPENTLC Account Management page^]
 
+// Catalog Items
+:opentlc_catalog_name1: OPENTLC OpenShift 4 Labs
+:opentlc_catalog_item_name1: OpenShift 4 Install VM - OpenStack
+
+// Documentation
+:ocp_docs: link:https://docs.openshift.com/container-platform/4.1/welcome/index.html[OpenShift Container Platform Documentation]
+:ocp42_docs: link:https://docs.openshift.com/container-platform/4.2/welcome/index.html[OpenShift Container Platform Documentation]
+
+// Lab Document Setup
+:scrollbar:
+:data-uri:
+:imagesdir: images
+:toc2:
+:linkattrs:
 == {labname} Lab
 
 .Goals
@@ -10,8 +28,126 @@ include::../../tools/00_0_Lab_Header.adoc[]
 * Prepare environment for offline install of OpenShift 4
 * Deploy an OpenShift 4 cluster
 
-include::../../tools/00_1_Lab_Setup_Template.adoc[]
+:numbered:
+== Provision Lab Environment
 
+[NOTE]
+If you previously set up an environment for this class, you can skip this section and go directly to the <<labexercises>> section.
+
+In this section, you provision the lab environment to provide access to all of the components required to perform the labs. Your lab environment runs in a shared cloud environment so that you can access it over the Internet from anywhere. However, do not expect performance to match a dedicated environment.
+
+. Go to the {opentlc_portal} and use your OPENTLC credentials to log in.
++
+[TIP]
+If you do not remember your password, go to the {opentlc_account_management} to reset your password.
+
+. Navigate to *Services -> Catalogs -> All Services -> {opentlc_catalog_name1}*.
+. On the left, select *{opentlc_catalog_item_name1}*.
+. On the right, click *Order*.
+. If the interface offers it to you, select an appropriate geographical region closest to you.
+. On the bottom right, click *Submit*.
++
+[WARNING]
+Do not select *App Control -> Start* after ordering the lab. Ordering the lab automatically begins the build process. Selecting *Start* may corrupt the lab environment or cause other complications.
+
+* After a few minutes, expect to receive an email with instructions on how to connect to the environment.
+. You will receive three e-mails:
+
+.Provisioning started
+[source,texinfo]
+// TODO: Get the right names for these items
+// TODO: Get the right output for the emails
+----
+Provisioning has started on your Red Hat OPENTLC OTLC-LAB-<OpenTLC User Name>-PROD_OCP4_HA_LAB-<GUID> environment.
+You will receive more information via email during the build process within the next 30 minutes.
+----
+
+.Provisioning has updated (this means that the VMs have been requested successfully)
+[source,texinfo]
+----
+Provisioning is continuing for Red Hat OPENTLC service OTLC-LAB-<OpenTLC User Name>-PROD_OCP4_HA_LAB-<GUID>.
+You will receive another email when the environment is available within the next 30 minutes.
+----
+
+.Provisioning completed
+[source,texinfo]
+----
+Your environment for OTLC-LAB-<OpenTLC User Namve>-PROD_OCP4_DISCONNECTED-<GUID>_COMPLETED has been provisioned.
+Your unique identifier, GUID, is: <GUID>
+
+Access to the environment will be granted as soon as the environment deployment is complete.
+
+Please refer to the instructions for next steps and how to access your environment.
+
+Troubleshooting and Access issues:
+
+Always refer to the instructions to understand how to properly access and navigate your environment. If you need help using the SSH client on your computer you can consult http://www.opentlc.com/ssh.html.
+
+NOTICE: Your environment will expire and be deleted in 7 day(s) at 2019-11-19 00:00:00 -0500 and will be idled down after 10 hour(s).
+
+In order to conserve resources, we cannot archive or restore any data in this environment. All data will be lost upon expiration.
+---
+
+Here is some important information about your environment:
+
+You can access your bastion via SSH:
+ssh nstephan-redhat.com@bastion.39ca.blue.osp.opentlc.com
+
+Make sure you use the username 'nstephan-redhat.com' and the password '4iW3sXK0nZcK4jai' when prompted.
+
+Your base domain is 'blue.osp.opentlc.com'
+
+For reference, the floating IPs you will use for OpenShift are:
+
+API IP: 169.47.183.40
+API FQDN: api.39ca.blue.osp.opentlc.com
+
+Ingress: 169.47.183.31
+Ingress FQDN: *.apps.39ca.blue.osp.opentlc.com
+----
+
+. Wait until you receive the final e-mail before trying to connect to your environment.
+. Note the GUID (a 4 character ID) of your environment.
+. Note the base domain (`blue.osp.opentlc.com` in the example above)
+. Note the command to SSH into your bastion.
+. Finally, note the SSH password for your user id. *This password is different from your regular OpenTLC password!*
+
+=== Start Environment After Shut Down
+
+To conserve resources, the lab environment shuts down automatically after eight hours. In this section, you restart the lab environment for this course after it has shut down automatically.
+
+. Go to the {opentlc_portal} and use your OPENTLC credentials to log in.
+. Navigate to *Services -> My Services* (this should be the screen shown right after logging in).
+. In the list of your services, select your lab environment.
+. Select *App Control -> Start* to start your lab environment.
+. Select *Yes* at the *Are you sure?* prompt.
+. On the bottom right, click *Submit*.
+
+After a few minutes, expect to receive an email letting you know that the lab environment has been started.
+
+=== Test Server Connections
+
+The `bastion` administration host serves as an access point into the environment and is not part of the OpenShift environment.
+
+. Connect to your administration host and make sure you can access each of your provisioned hosts:
++
+[source,sh]
+----
+ssh <OpenTLC User Name>@bastion.<GUID>.<Base Domain>
+----
++
+. Validate that the GUID variable is set correctly for your environment:
++
+[source,sh]
+----
+echo $GUID
+----
++
+.Sample Output
+[source,texinfo]
+----
+c3po
+----
 [[labexercises]]
 :numbered:
 
@@ -42,11 +178,11 @@ Some of these infratructure requirements include:
 * DNS entries for API, Ingress, etcd, and more
 * Virtual Machines or Servers
 
-As easy as OpenShift 4 has made it to deploy and manage OpenShift, there are still challenges that certain customer environments and requirements introduce. The one that is most often given as a requirement is the need for OpenShift to be installed in a "disconnected" environment. 
+As easy as OpenShift 4 has made it to deploy and manage OpenShift, there are still challenges that certain customer environments and requirements introduce. The one that is most often given as a requirement is the need for OpenShift to be installed in a "disconnected" environment.
 
 == Connected vs Disconnected
 
-What do these terms really mean? On the surface, they are easy to understand. There are, however, levels of nuance that are important to understand when talking about these. 
+What do these terms really mean? On the surface, they are easy to understand. There are, however, levels of nuance that are important to understand when talking about these.
 
 A connected environment is the easier to understand of the two. In a connected environment, there is full access to the Internet for all machines, including the machine you run the installer from. This access may, as of OpenShift 4.2, be through a cluster wide proxy, which can be defined at installation or in a post-installation configuration. In a connected environment, OpenShift call pull container images, source code, packages, or any other artifacts necessary to install and operate the platform as well as run workloads. The connected OpenShift cluster also has the ability to send telemetry back to Red Hat for both insights and subscription management.
 
@@ -160,7 +296,7 @@ Read the following and remember as you proceed though the lab content:
 * As this lab progresses, you will sometimes be given commands and tasks to perform. Other times, you will be given requirements and will need to use documentation to figure out how to accomplish the task for that section. It is meant to be challenging, but everything is able to be completed using your combined knowledge from pre-reqs, module lecture, and documentation.
 
 * Sample outputs that are provided alongside commands in this lab are just that - samples. Do not take the outputs literally. Your environments will all have different values and outputs.
- 
+
 * Commands that you can or should run are in *bold*.
 
 * Watch for *substitution*. For example, if you see `$GUID`, you should be using your assigned GUID. Fortunately, this is stored as an environment variable for you on your `bastion`.
@@ -502,13 +638,13 @@ Storing signatures
 
 . Log off of the `Utility VM` to the `bastion`, where you will continue in the next section.
 
-You now have a container registry running in your lab environment. This is a very basic example of a container registry without much advanced functionality, but it serves a purpose to help get what matters deployed - OpenShift. Typically you will be working with an existing enterprise container registry or service that you will simply need credentials to in order to proceed with the next section. Examples of this might be Quay Enterprise, Quay.io, Artifactory, Nexus, ECR, GCR, and many more. 
+You now have a container registry running in your lab environment. This is a very basic example of a container registry without much advanced functionality, but it serves a purpose to help get what matters deployed - OpenShift. Typically you will be working with an existing enterprise container registry or service that you will simply need credentials to in order to proceed with the next section. Examples of this might be Quay Enterprise, Quay.io, Artifactory, Nexus, ECR, GCR, and many more.
 
 In the next section, you will build on this as you move forward with your disconnected installation of OpenShift 4.
 
 === Mirror Content
 
-Now that you have a container registry set up, secured, and accessible within your environment, you will need to get the content mirrored into your local environment. What do you need in order to install OpenShift 4? Remember, OpenShift 4 is deployed with all components running as containers and controlled by Operators. In OpenShift 3, you had to come up with a list of container images and tags and pull them into your local environment before you could run the installer. The process was tedious and error prone. In OpenShift 4, all of the container images and versions are delivered as part of the payload, so there is no guessing on exact container images or versions you need. 
+Now that you have a container registry set up, secured, and accessible within your environment, you will need to get the content mirrored into your local environment. What do you need in order to install OpenShift 4? Remember, OpenShift 4 is deployed with all components running as containers and controlled by Operators. In OpenShift 3, you had to come up with a list of container images and tags and pull them into your local environment before you could run the installer. The process was tedious and error prone. In OpenShift 4, all of the container images and versions are delivered as part of the payload, so there is no guessing on exact container images or versions you need.
 
 The `oc` client provides an easy way for you to get all of the required images. Using the `oc adm release` command, you can see information about releases, inspect the content of the release, and mirror release content across image registries. This means that rather than using several different tools, you will be able to pull all of the containers you need for an OpenShift 4 install in a single command. The `oc adm release mirror` command will copy the images and update payload for a given release from one registry to another. In this case, it will copy from `quay.io` to the local container registry you deployed in the previous section. By default this command will not alter the payload and will print out the configuration that must be applied to a cluster to use the mirror. There is, however, a little bit of prep work to complete first.
 
@@ -1093,7 +1229,7 @@ INFO Consuming "Openshift Manifests" from target directory
 INFO Consuming "Common Manifests" from target directory
 ----
 
-. Look at the new files created. This is what you need to boot your cluster, but you still need to make a few more changes. Like `manifests`, `ignition` files are not something you are normally expected to modify. To complete a disconnected UPI install on OpenStack, you do need to make a couple of changes. 
+. Look at the new files created. This is what you need to boot your cluster, but you still need to make a few more changes. Like `manifests`, `ignition` files are not something you are normally expected to modify. To complete a disconnected UPI install on OpenStack, you do need to make a couple of changes.
 +
 [source,subs="{markup-in-source}"]
 ----
@@ -1255,7 +1391,7 @@ WARNING: Your `bootstrap.ign` file contains some sensitive credentials and certi
 EOF*
 ----
 
-Congratulations! This was a long phase, but you are finished with your preparation work. 
+Congratulations! This was a long phase, but you are finished with your preparation work.
 
 You have completed the following:
 
@@ -1292,7 +1428,7 @@ Review the link:https://docs.openshift.com/container-platform/4.2/installing/ins
 You are ready to start creating server in the OpenStack environment. What is the first thing you need to start an OpenShift 4 cluster once you have generated all of your installation artifacts in the previous section? Think about the bootstrap process you learned about.
 // TODO: Do we need to illustrate that in the lab guide again? nstephan thinks so...
 
-Since all of your servers will be running on a private network inside of OpenStack, you do need to provide a way to access them from outside of the OpenStack cluster. It is best to do this before the installation, so that the installation process can take advantage. 
+Since all of your servers will be running on a private network inside of OpenStack, you do need to provide a way to access them from outside of the OpenStack cluster. It is best to do this before the installation, so that the installation process can take advantage.
 
 NOTE: All of these tasks should be done from your `bastion` while logged in as your OpenTLC ID.
 
@@ -1363,16 +1499,16 @@ NOTE: All of these tasks should be done from your `bastion` while logged in as y
 ----
 +
 * This command does the following:
-** Creates a port named `$INFRA_ID-api-port` 
+** Creates a port named `$INFRA_ID-api-port`
 ** Assigns that port to the `$GUID-ocp-network` network
 ** Assigns an internal static IP from the `$GUID-ocp-subnet`. You cannot change this IP address.
 ** Assigns the `$GUID-master_sg` Security Group to this newly created port
 
 . Create another port for the Ingress traffic with the following options:
 .. Uses a fixed IP of `192.168.47.7`
-.. Uses the `$GUID-ocp-network` network 
+.. Uses the `$GUID-ocp-network` network
 .. Uses the `$GUID-ocp-subnet` subnet
-.. Uses the `$GUID-worker_sg` security group 
+.. Uses the `$GUID-worker_sg` security group
 .. Named `$INFRA_ID-ingress-port`
 
 ifeval::[{show_solution == true}]
@@ -1455,7 +1591,7 @@ Your bootstrap node should now be up and running. It is waiting for master nodes
 
 The first phase of the bootstrapping process is complete if you've made it this far. You have a bootstrap node running and you have verified that the `bootkube.service` is running. What is it waiting for? It is waiting for `master` nodes. Your `master` nodes will run the production control plane, including `etcd`, which is needed first for the bootstrap process to continue.
 
-In this section, you will create three `master` nodes. You should follow the same process you have used in the previous section. Start by creating the network ports followed by the actual VMs. 
+In this section, you will create three `master` nodes. You should follow the same process you have used in the previous section. Start by creating the network ports followed by the actual VMs.
 
 . Open a new SSH session to your `bastion`. This allows you to leave the previous one running and observing the `bootkube` process.
 +
@@ -1522,7 +1658,7 @@ done*
 done*
 ----
 
-. How will these `master` nodes how to join the cluster and become the control plane? Look at the `ignition` file you passed to these on creation with `--user-data`. It tells `RHCOS` where to get its configuration from. 
+. How will these `master` nodes how to join the cluster and become the control plane? Look at the `ignition` file you passed to these on creation with `--user-data`. It tells `RHCOS` where to get its configuration from.
 +
 [source,subs="{markup-in-source}"]
 ----
@@ -1868,10 +2004,3 @@ Congratulations! You have fully deployed an OpenShift 4 cluster using the UPI me
 Only do things here if you mess things up and need to get back to a good place.
 
 //TODO: write cleanup
-
-
-
-
-
-
-
