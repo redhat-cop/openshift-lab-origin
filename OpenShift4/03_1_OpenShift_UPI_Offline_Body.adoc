@@ -1,0 +1,1877 @@
+:labname: OpenShift UPI Disconnected Deployment
+:markup-in-source: verbatim,attributes,quotes
+include::../../tools/00_0_Lab_Header.adoc[]
+
+== {labname} Lab
+
+.Goals
+
+* Create Infrastructure components required by OpenShift 4
+* Prepare environment for offline install of OpenShift 4
+* Deploy an OpenShift 4 cluster
+
+include::../../tools/00_1_Lab_Setup_Template.adoc[]
+
+[[labexercises]]
+:numbered:
+
+== Overview
+
+In this lab, you will deploy Red Hat OpenShift Container Platform 4 using the User Provided Infrastructure method onto Red Hat OpenStack. These concepts should now be familiar to you, but are also explained with some additional detail here.
+
+OpenShift 4 introduces an entirely new method for deloying and managing OpenShift clusters. Rather than a complex set of Ansible playbooks that you used in OpenShift 3, Red Hat now provides a single binary that you can use to install an OpenShift 4 cluster in many different environments, such as:
+
+* link:https://docs.openshift.com/container-platform/4.2/installing/installing_aws/installing-aws-account.html[Amazon Web Services^]
+* link:https://docs.openshift.com/container-platform/4.2/installing/installing_azure/installing-azure-account.html[Microsoft Azure^]
+* link:https://docs.openshift.com/container-platform/4.2/installing/installing_gcp/installing-gcp-account.html[Google Cloud Platform^]
+* link:https://docs.openshift.com/container-platform/4.2/installing/installing_openstack/installing-openstack-installer-custom.html#installation-osp-default-deployment_installing-openstack-installer-custom[Red Hat OpenStack^]
+* link:https://docs.openshift.com/container-platform/4.2/installing/installing_vsphere/installing-vsphere.html#installation-vsphere-infrastructure_installing-vsphere[VMware vSphere^]
+* link:https://docs.openshift.com/container-platform/4.2/installing/installing_bare_metal/installing-bare-metal.html#installation-requirements-user-infra_installing-bare-metal[Bare Metal^]
+
+Each of these environments come with their own sets of requirements and allow for different levels of "out of box" automation available for the installer to take advantage of. For instance, on AWS, Azure, GCP, and Red Hat OpenStack the OpenShift installer can completely automate a deployment of OpenShift 4.2. This includes provisioning all of the infrastructure and network components as well as deploying the OpenShift software. Alternately, providers such as VMware and generic bare metal do not allow for a fully automated solution, but can still be used with manual steps leading up to the actual deployment of OpenShift. These are the concepts previously discussed as Installer Provided Infrastructure and User Provided Infrastructure.
+
+TIP: You can use the UPI "bare metal" method in many public cloud or IaaS environments not specifically addressed by the installer.
+
+At a high level, Installer Provided Infrasture (IPI) and User Provided Infrastructure (UPI) are very simple in their differences. The IPI method creates provisions all of the infrastrucure for you from the underlying cloud or IaaS provider. The UPI method requires you, the user, to provision all of the required infrastructure components ahead of time. More details about infrastructure and other requirements can be found in the appropriate requirements section for the provider, such as link:https://docs.openshift.com/container-platform/4.2/installing/installing_openstack/installing-openstack-installer-custom.html#installation-osp-default-deployment_installing-openstack-installer-custom:[OpenStack^] or link:https://docs.openshift.com/container-platform/4.2/installing/installing_aws/installing-aws-account.html#installation-aws-limits_installing-aws-account[AWS^].
+
+Some of these infratructure requirements include:
+
+* Virtual Networks (such as Neutron in OpenStack or VPCs in AWS)
+* Virtual Subnets
+* Security Groups
+* DNS entries for API, Ingress, etcd, and more
+* Virtual Machines or Servers
+
+As easy as OpenShift 4 has made it to deploy and manage OpenShift, there are still challenges that certain customer environments and requirements introduce. The one that is most often given as a requirement is the need for OpenShift to be installed in a "disconnected" environment. 
+
+== Connected vs Disconnected
+
+What do these terms really mean? On the surface, they are easy to understand. There are, however, levels of nuance that are important to understand when talking about these. 
+
+A connected environment is the easier to understand of the two. In a connected environment, there is full access to the Internet for all machines, including the machine you run the installer from. This access may, as of OpenShift 4.2, be through a cluster wide proxy, which can be defined at installation or in a post-installation configuration. In a connected environment, OpenShift call pull container images, source code, packages, or any other artifacts necessary to install and operate the platform as well as run workloads. The connected OpenShift cluster also has the ability to send telemetry back to Red Hat for both insights and subscription management.
+
+A disconnected environment is more complex. When you refer to a disconnected environment, what do you mean? What components can potentially be disconnected or offline?
+
+[cols="1,2",caption=""]
+|====
+^a|*Component*
+^a|*Considerations*
+
+^.^a|Installation
+a|* All images necessary for OpenShift to be installed must be mirrored locally
+* OpenShift installer points to `imageContentSource` location for these images during installation
+
+^.^a|Operator Hub
+a|* You must pull all operator container images and other Operator Hub components locally
+* Current process (as of 4.2) is very manual and requires work on each Operator that you want to pull in
+
+^.^a|Telemetry
+a|* You cannot take advantage of any proactive insight from Red Hat
+* Turning this off prevents your cluster from reporting back to Red Hat to notify of problems, preventing the Red Hat CCX team to proactively notify support teams
+
+^.^a|Machine Management
+a|* Your cluster can no longer provision and deprovision its own machines
+* If you are deploying in a private cloud, consider keeping this connected for easier capacity management in the cluster
+
+^.^a|Builds
+a|* You must host all of your code and dependencies internally
+* Anything that must be pulled from an external sources will not be available
+
+^.^a|Deployments
+a|* All of the container images you need to deploy for workloads must be available internally
+* Any images that must be pulled from external sources will not be available
+
+^.^a|Authorization
+a|* You cannot integrate with an external authentication provider such as an organization SSO
+|====
+
+Deciding on a disconnected environment is not an all or nothing approach. You could install a cluster using a disconnected method and have the resulting cluster be fully connected. You could also configure that resulting cluster so it is able to connect to the IaaS provider for machine management, but cannot connect to the Internet at large to download content. Every decision has its trade-offs, some of which are described above and below.
+
+[cols="1,1",caption=""]
+|====
+^a|*Connected*
+^a|*Disconnected*
+
+|A fully connected deployment requires Internet access and will pull all necessary content to build and operate the platform
+|A disconnected deployment is more flexible and you can choose which components will require Internet access and which ones will pull from and internal source
+
+|IPI or UPI
+|UPI
+
+|Easier, but opinionated
+|More difficult, but more flexible
+
+|Deploy to supported IaaS provider with full (or proxy) Internet access
+|Deploy to any platform, including bare metal
+|====
+
+Finally, keep in mind that OpenShift 4 is an "Operator driven platform". Everything that you need to install the platform is delivered and controlled as an Operator via its container image. That means no more RPMs or other package dependencies.
+
+== Environment overview
+
+In this lab, you will be deploying OpenShift 4 into an OpenStack environment. While you can do this with a full IPI install, this lab will challenge you to do the install using the UPI method _and_ in a disconnected mode for the installation. This means you will have to set up a container image registry and mirror all of the content necessary to complete the installation in addition to the normal steps required to complete a UPI installation.
+
+The lab environment you have ordered consists of several components that are being provided to get you started. In a real customer engagement, you'd likely have to start from nothing, so the details below are provided both for your future reference and to give you the necessary information to complete this lab. As always, refer to the link:https://docs.openshift.com/container-platform/4.2/welcome/index.html[OpenShift Documentation^] for up-to-date information on requirements or steps required for a deployment on a specific provider.
+
+[cols="1,1",captions=""]
+|====
+^a|*Component*
+^a|*Details*
+
+^.^a|Project
+a|* Name: $GUID-project
+* Access:
+** Member
+** Swift object storage (for ignition)
+* Quotas
+
+^.^a|Network
+a|* Name: $GUID-ocp-network
+* Includes router for network accessibility
+
+^.^a|Subnet
+a|* Name: $GUID-ocp-subnet
+* CIDR: 192.47.0.0/24
+** Your internal private IPs will come from this subnet
+
+^.^a|Security Groups
+a|* Master
+** Name: $GUID-master_sg
+* Worker
+** Name: $GUID-worker_sg
+
+^.^a|Virtual Machines
+a|* Bastion
+** Name: bastion.$GUID.red.osp.opentlc.com, bastion.opentlc.internal
+** SSH open from Internet
+* Utility VM
+** Name: utilityvm.opentlc.internal
+** Only accessible from within environment, including bastion
+|====
+
+// TODO: Add diagram of environment
+
+What you build in this lab will be used for the rest of the course. This is the foundation and needs to be well thought out and stable. There will be many things that you have to decide on and configure in this lab, so take the time to read, think, understand, and act on everything you do.
+
+=== Before You Start
+
+Read the following and remember as you proceed though the lab content:
+
+* As this lab progresses, you will sometimes be given commands and tasks to perform. Other times, you will be given requirements and will need to use documentation to figure out how to accomplish the task for that section. It is meant to be challenging, but everything is able to be completed using your combined knowledge from pre-reqs, module lecture, and documentation.
+
+* Sample outputs that are provided alongside commands in this lab are just that - samples. Do not take the outputs literally. Your environments will all have different values and outputs.
+ 
+* Commands that you can or should run are in *bold*.
+
+* Watch for *substitution*. For example, if you see `$GUID`, you should be using your assigned GUID. Fortunately, this is stored as an environment variable for you on your `bastion`.
+
+== Prepare Environment
+
+To prepare your environment, think of all of the things that you will need to do in order to install OpenShift in a restricted network environment. Start by reading through the link:https://docs.openshift.com/container-platform/4.2/installing/installing_restricted_networks/installing-restricted-networks-preparations.html[restricted network installation documentation^].
+
+=== Configure Bastion VM
+
+Your bastion VM is your entry point to the disconnected environment. Sometimes it is referred to as a "jump host". It is the only node you can SSH directly into from outside of the lab environment. It is where you will perform the majority of your activities in these labs throughout the week. As you prepare this host, think about the things you will do from it during an installation.
+
+. SSH to your `bastion` VM. Use the credentials and instructions you received in your provisioning email to connect.
++
+WARNING: Unless otherwise specified, *you must do everything as your OpenTLC username*. There is no reason to be root. If you try to do all of these exercises as root and use the hints and commands in this lab guide, you will fail.
+
+. On your `bastion`, set an environment variable. This will be used throughout this lab to determine the version of OpenShift you want to install. It will make some future commands easier to run. This uses the Ansible `lininfile` module. It helps ensure you add to your `.bashrc`, but do not add duplicate entries.
++
+TIP: Commands that you should run will appear in *bold*. Sample output will appear as normal text.
++
+[source,subs="{markup-in-source}"]
+----
+# *ansible localhost -m lineinfile -a 'path=~/.bashrc regexp="^export OCP_RELEASE" line="export OCP_RELEASE=4.2.1"'*
+# *source ~/.bashrc*
+----
+
+. Download and extract the OpenShift CLI, or `oc` client, to your `bastion`. This client will be used extensively throughout the course for activities such as mirroring images for installation to controlling your cluster and workloads once deployed. The `oc` client is very similar to the `kubectl` client, but is more powerful and user friendly when used with OpenShift.
++
+[source,subs="{markup-in-source}"]
+----
+# *wget https://mirror.openshift.com/pub/openshift-v4/clients/ocp/$OCP_RELEASE/openshift-client-linux-$OCP_RELEASE.tar.gz*
+
+--2019-10-31 19:23:31--  https://mirror.openshift.com/pub/openshift-v4/clients/ocp/latest/openshift-client-linux-4.2.0.tar.gz
+Resolving mirror.openshift.com (mirror.openshift.com)... 54.172.163.83, 54.172.173.155, 54.173.18.88
+Connecting to mirror.openshift.com (mirror.openshift.com)|54.172.163.83|:443... connected.
+HTTP request sent, awaiting response... 200 OK
+Length: 24533950 (23M) [application/x-gzip]
+Saving to: ‘openshift-client-linux-4.2.0.tar.gz.3’
+
+100%[=============================================================================================================================================================================================>] 24,533,950  93.5MB/s   in 0.3s
+
+2019-10-31 19:23:32 (93.5 MB/s) - ‘openshift-client-linux-4.2.0.tar.gz.3’ saved [24533950/24533950]
+----
++
+* You can always find a list of OpenShift clients to download by visiting:
+** link:https://access.redhat.com/downloads/content/290[Red Hat products download page^]
+** link:https://mirror.openshift.com/pub/openshift-v4/clients/ocp/[OpenShift mirror downloads^]
+
+. Because you will be using this extensively, extract it to a location that will make it easy to use.
++
+[source,subs="{markup-in-source}"]
+----
+# *sudo tar xzf openshift-client-linux-$OCP_RELEASE.tar.gz -C /usr/local/sbin/ oc kubectl*
+# *which oc*
+
+/usr/local/sbin/oc
+----
++
+NOTE: This package will provide you both the `oc` client and `kubectl` client, but this course material will use the `oc` client exclusively.
+
+. You will be deploying into an OpenStack private cloud, so this is a good time to verify your access. As described in the overview, you have a project provisioned that only you have access to. In addition to the infrastructure components that have been provisioned for you, an authentication file has also been added to the `bastion` for you to use with the `openstack` client.
++
+[source,subs="{markup-in-source}"]
+.Sample Output
+----
+# *cat ~/.config/openstack/clouds.yaml*
+
+clouds:
+  GUID-project:
+    auth:
+      auth_url: "http://169.47.188.15:5000/v3"
+      username: "GUID-user"
+      project_name: "GUID-project"
+      user_domain_name: "Default"
+      password: "vEC2vY4vKVPV"
+    region_name: "regionOne"
+    interface: "public"
+    identity_api_version: 3
+----
+
+. Use the `openstack` client to retrieve the current list of your OpenStack instances. This ensures the credentials provided in your `clouds.yaml` file are working.
++
+[source,subs="{markup-in-source}"]
+----
+# *openstack server list -f json*
+
+[
+  {
+    "ID": "1ecb9d22-a3da-42cf-8100-ae4e56a1a518",
+    "Name": "bastion",
+    "Status": "ACTIVE",
+    "Networks": "70aa-ocp-network=192.168.47.13, 169.47.183.47",
+    "Image": "",
+    "Flavor": "2c2g30d"
+  },
+  {
+    "ID": "ed806bec-b3ce-4d68-8f5b-b3ee7bbe0abd",
+    "Name": "utilityvm",
+    "Status": "ACTIVE",
+    "Networks": "70aa-ocp-network=192.168.47.18",
+    "Image": "",
+    "Flavor": "2c2g30d"
+  }
+]
+----
+
+. Ensure that you can see some of your additional resources. These resources have all been provided to you and will be used for your OpenShift install later in this lab.
+.. `openstack server list`
+.. `openstack network list`
+.. `openstack security group list`
+
+. You can use the `openstack` client to gather more information about all of your resources as well.
++
+[source,subs="{markup-in-source}"]
+----
+# *openstack subnet show $GUID-ocp-subnet -f json*
+
+{
+  "allocation_pools": [
+    {
+      "start": "192.168.47.10",
+      "end": "192.168.47.254"
+    }
+  ],
+  "cidr": "192.168.47.0/24",
+  "created_at": "2019-11-07T01:02:30Z",
+  "description": "",
+  "dns_nameservers": [],
+  "enable_dhcp": true,
+  "gateway_ip": "192.168.47.1",
+  "host_routes": [],
+  "id": "c17b18d7-ddcc-480d-afc2-53ce1905639a",
+  "ip_version": 4,
+  "ipv6_address_mode": null,
+  "ipv6_ra_mode": null,
+  "location": {
+    "cloud": "sten1-project",
+    "region_name": "regionOne",
+    "zone": null,
+    "project": {
+      "id": "00b1db460d2840408d0f98de06e7363c",
+      "name": "sten1-project",
+      "domain_id": "default",
+      "domain_name": null
+    }
+  },
+  "name": "sten1-ocp-subnet",
+  "network_id": "2daba232-956b-43ab-84b1-702db85460f5",
+  "prefix_length": null,
+  "project_id": "00b1db460d2840408d0f98de06e7363c",
+  "revision_number": 0,
+  "segment_id": null,
+  "service_types": [],
+  "subnetpool_id": null,
+  "tags": [],
+  "updated_at": "2019-11-07T01:02:30Z"
+}
+----
+
+At this point, you are done working on your `bastion`. You will finish up the configuration later. In the next section, you will work on the `Utility VM`.
+
+=== Deploy Container Registry
+
+Your utility VM is provided to run services that you need to complete the installation. OpenShift 4 is deployed with container images. There are no packages to install. Think about the things that you might need to host in a disconnected environemnt as well as things you might want to provide to your cluster once it is built.
+
+This lab will begin to challenge you a little more. Below are a set of requirements that you need to satisfy. There are links to documentation that has all of the necessary information to complete this section.
+
+. From your `bastion`, SSH to `utilityvm.opentlc.internal`. An SSH config is provided for you, so it is important to use the FQDN in order for the configuration to apply. Note that this will log you into the `utiltiy VM` as the `cloud-user` user. That is okay.
++
+[source,subs="{markup-in-source}"]
+----
+# *ssh utilityvm.opentlc.internal*
+----
+
+. On your `Utility VM`, install a container registry:
+* Use `podman` to run any containers.
++
+TIP: Whenever you see a `docker` command in any of the reference material, you can use `podman` instead. `Docker` is _*not*_ installed in any of your systems.
+* Rootless `podman` is already enabled for you, so you do *not* need to be `root` to run your containers.
+** See more link:https://access.redhat.com/documentation/en-us/red_hat_enterprise_linux_atomic_host/7/html/managing_containers/finding_running_and_building_containers_with_podman_skopeo_and_buildah#set_up_for_rootless_containers[documentation here^] for reference on how to enable that feature in RHEL 7.7+.
+* The container registry must be secured using certificates.
+* The container registry must survive a reboot.
+* The registry must be accessible by all other servers in your environment on port 5000.
+* You can use a basic container registry that can be pulled from `docker.io/library/registry:2`.
+* Documentation for deploying this container registry can be found:
+** link:https://docs.openshift.com/container-platform/4.2/installing/installing_restricted_networks/installing-restricted-networks-preparations.html#installation-creating-mirror-registry_installing-restricted-networks-preparations[OpenShift Docs^]
+** link:https://docs.docker.com/registry/deploying/[Registry Docs^]
+
+. On your `Utility VM`, test `podman` to make sure things are functioning as you expect. This test will pull the Red Hat Universal Base Image (UBI) and run it as a regular user.
++
+[source,subs="{markup-in-source}"]
+----
+# *podman pull ubi7/ubi:7.7*
+# *podman run ubi7/ubi:7.7 cat /etc/os-release*
+
+NAME="Red Hat Enterprise Linux Server"
+VERSION="7.7 (Maipo)"
+...
+----
++
+WARNING: Make sure you are logged in as your user. Do not run this as `root`.
+
+. Continue configuring your container registry to meet the requirements listed above.
+
+ifeval::[{show_solution} == true]
+
+. Create directories for your data, auth, and certificates that will be used by the container registry. Because you will use these directories and files in your container, you will need to change permissions as well to run as a regular user.
++
+[source,subs="{markup-in-source}"]
+----
+# *sudo mkdir -p /opt/registry/{auth,certs,data}*
+# *sudo chown -R $USER /opt/registry*
+----
+
+. Because you have a requirement to secure the container registry with certificates, you will create a self-signed certificate. In a real environment, you would skip this step since you would get your certificate from a legitimate certificate authority.
++
+[source,subs="{markup-in-source}"]
+----
+# *cd /opt/registry/certs*
+# *openssl req -newkey rsa:4096 -nodes -sha256 -keyout domain.key -x509 -days 365 -out domain.crt*
+
+Generating a 4096 bit RSA private key
+...........................................................
+.............................................................................
+writing new private key to 'domain.key'
+-----
+You are about to be asked to enter information that will be incorporated
+into your certificate request.
+What you are about to enter is what is called a Distinguished Name or a DN.
+There are quite a few fields but you can leave some blank
+For some fields there will be a default value,
+If you enter '.', the field will be left blank.
+-----
+Country Name (2 letter code) [XX]:**US**
+State or Province Name (full name) []:**Washington**
+Locality Name (eg, city) [Default City]:**Seattle**
+Organization Name (eg, company) [Default Company Ltd]:**Red Hat**
+Organizational Unit Name (eg, section) []:**GPTE**
+Common Name (eg, your name or your server's hostname) []:**utilityvm.opentlc.internal**
+Email Address []:**<your-email-address>**
+----
++
+* This command will create a certificate and key file in the `/opt/registry/certs` directory.
+* You can provide any values for most of the questions.
+* You *MUST* provide the correct common name - `utilityvm.opentlc.internal`.
+
+. Since this registry will be secured, create a username and password. You are using `htpasswd` as the authentication mechanism, so you will need to add these to a file that will be mounted into the container registry.
++
+[source,subs="{markup-in-source}"]
+----
+# *htpasswd -bBc /opt/registry/auth/htpasswd openshift redhat*
+----
++
+* This will create a user named `openshift` with a password of `redhat`
+
+. At this point, all of the requirements necessary to start your container registry shoudl be satisfied. You will now use rootless `podman` to start the container.
++
+[source,subs="{markup-in-source}"]
+----
+# *podman run -d --name mirror-registry \
+-p 5000:5000 --restart=always \
+-v /opt/registry/data:/var/lib/registry:z \
+-v /opt/registry/auth:/auth:z \
+-e "REGISTRY_AUTH=htpasswd" \
+-e "REGISTRY_AUTH_HTPASSWD_REALM=Registry Realm" \
+-e "REGISTRY_AUTH_HTPASSWD_PATH=/auth/htpasswd" \
+-v /opt/registry/certs:/certs:z \
+-e REGISTRY_HTTP_TLS_CERTIFICATE=/certs/domain.crt \
+-e REGISTRY_HTTP_TLS_KEY=/certs/domain.key \
+docker.io/library/registry:2*
+----
++
+* The container registry starts with the following options:
+** It is listening on port 5000
+** It has `htpasswd` authentication configured and is using the file you created
+** It is using the certificates you created
+
+. Test your connection to the registry.
++
+[source,subs="{markup-in-source}"]
+----
+# *curl -u openshift:redhat -k https://utilityvm.opentlc.internal:5000/v2/_catalog*
+
+{"repositories":[]}
+
+# *curl -u openshift:redhat https://utilityvm.opentlc.internal:5000/v2/_catalog*
+
+curl: (60) Peer's certificate issuer has been marked as not trusted by the user.
+----
++
+* The first test that ignores the self-signed certificates completes successfully
+* The second test that does not ignore the self-signed certificates fails
+
+. Since your container registry is secured and OpenShift will not tolerate untrusted certificates, you must add the certificates to your trusted store.
++
+[source,subs="{markup-in-source}"]
+----
+# *sudo cp /opt/registry/certs/domain.crt /etc/pki/ca-trust/source/anchors/*
+# *sudo update-ca-trust*
+# *curl -u openshift:redhat https://utilityvm.opentlc.internal:5000/v2/_catalog*
+
+{"repositories":[]}
+----
+
+endif::[]
+
+. Test to ensure you can push and pull an image from the container registry.
++
+[source,subs="{markup-in-source}"]
+----
+# *podman pull ubi7/ubi:7.7*
+# *podman login -u openshift -p redhat utilityvm.opentlc.internal:5000*
+
+Login Succeeded!
+
+# *podman tag registry.access.redhat.com/ubi7/ubi:7.7 utilityvm.opentlc.internal:5000/ubi7/ubi:7.7*
+# *podman push utilityvm.opentlc.internal:5000/ubi7/ubi:7.7*
+
+Getting image source signatures
+Copying blob 64f2bd9f473b done
+Copying blob 2cab4440f907 done
+Copying config 22ba711241 done
+Writing manifest to image destination
+Storing signatures
+----
++
+* In the tests above, you did the following:
+** Pull a UBI image from Red Hat to the container registry running on your `Utility VM`. If you previously pulled this image, it is already available and will not be pulled again.
+** Logged into the container registry you deployed on your `Utility VM`.
+** Tagged an image to prepare it to be pushed to the new container registry.
+** Pushed the container image to the new container registry.
+
+. Verify that the image you pushed is being written to the correct location in the file system of your `Utility VM`. You should see a single folder named `ubi7`.
++
+[source,subs="{markup-in-source}"]
+----
+# *ls /opt/registry/data/docker/registry/v2/repositories*
+----
+
+. Log off of the `Utility VM` to the `bastion`, where you will continue in the next section.
+
+You now have a container registry running in your lab environment. This is a very basic example of a container registry without much advanced functionality, but it serves a purpose to help get what matters deployed - OpenShift. Typically you will be working with an existing enterprise container registry or service that you will simply need credentials to in order to proceed with the next section. Examples of this might be Quay Enterprise, Quay.io, Artifactory, Nexus, ECR, GCR, and many more. 
+
+In the next section, you will build on this as you move forward with your disconnected installation of OpenShift 4.
+
+=== Mirror Content
+
+Now that you have a container registry set up, secured, and accessible within your environment, you will need to get the content mirrored into your local environment. What do you need in order to install OpenShift 4? Remember, OpenShift 4 is deployed with all components running as containers and controlled by Operators. In OpenShift 3, you had to come up with a list of container images and tags and pull them into your local environment before you could run the installer. The process was tedious and error prone. In OpenShift 4, all of the container images and versions are delivered as part of the payload, so there is no guessing on exact container images or versions you need. 
+
+The `oc` client provides an easy way for you to get all of the required images. Using the `oc adm release` command, you can see information about releases, inspect the content of the release, and mirror release content across image registries. This means that rather than using several different tools, you will be able to pull all of the containers you need for an OpenShift 4 install in a single command. The `oc adm release mirror` command will copy the images and update payload for a given release from one registry to another. In this case, it will copy from `quay.io` to the local container registry you deployed in the previous section. By default this command will not alter the payload and will print out the configuration that must be applied to a cluster to use the mirror. There is, however, a little bit of prep work to complete first.
+
+. On your `bastion`, start by testing your connection to the container registry you installed on your `Utility VM`. Remember that you secured this container registry with a certificate that you generated on the `Utility VM`. You should see a single repository, which you created in your test at the end of the last section.
++
+[source,subs="{markup-in-source}"]
+----
+# *curl -u openshift:redhat https://utilityvm.opentlc.internal:5000/v2/_catalog*
+
+curl: (60) Peer's certificate issuer has been marked as not trusted by the user.
+
+# *sudo scp utilityvm.opentlc.internal:/opt/registry/certs/domain.crt /etc/pki/ca-trust/source/anchors/*
+# *sudo update-ca-trust*
+# *curl -u openshift:redhat https://utilityvm.opentlc.internal:5000/v2/_catalog*
+
+{"repositories":["ubi7/ubi"]}
+----
+
+. You can now connect to your local container registry. Proceed by mirroring all of the content necessary to install OpenShift 4.
+.. Create a pull secret for your new container registry running on your `Utility VM`
+.. Create a file with your OpenShift pull secret
+* You can get an OpenShift pull secret from link:https://cloud.redhat.com/openshift/install/openstack/installer-provisioned[cloud.redat.com^]
+** Use the same Red Hat account you use to log into the customer portal for downloads, KB, etc.
+** If you do not have an account, create a link:https://developers.redhat.com/[Red Hat Developer account^]
+.. Merge your pull secrets into a single `json` file that you will use for both mirroring and installing
+.. Mirror the content to your local container registry
+* You can find instructions for mirroring the content in the link:https://docs.openshift.com/container-platform/4.2/installing/installing_restricted_networks/installing-restricted-networks-preparations.html#installation-mirror-repository_installing-restricted-networks-preparations[OpenShift Docs^]
++
+NOTE: Make sure you save the `imageContentSource` and `ImageContentSourcePolicy` output from the mirroring so you will know what to use in later steps.
+
+ifeval::[{show_solution} == true]
+
+. Create a pull secret that can be used to push content into the container registry you installed on the `Utility VM`.
++
+[source,subs="{markup-in-source}"]
+----
+# *podman login -u openshift -p redhat --authfile ~/pullsecret_config.json utilityvm.opentlc.internal:5000*
+
+Login Succeeded!
+----
+
+. Look at the `json` file you created in the previous command. This file now includes the container registry hostname as well as an authentication token based on the credentials you provided in the `podman` command.
++
+[source,subs="{markup-in-source}"]
+----
+# *cat ~/pullsecret_config.json*
+
+{
+	"auths": {
+		"utilityvm.opentlc.internal:5000": {
+			"auth": "b3BlbnNoaWZ0OnJlZGhhdA=="
+		}
+	}
+----
+
+. That is one side of the credentials you need. The other side is the OpenShift pull secret. Add that to a file called `ocp_pullsecret.json`.
++
+[source,subs="{markup-in-source}"]
+----
+# *echo '<your-openshift-pull-secret-in-json>' > ~/ocp_pullsecret.json*
+----
++
+WARNING: Make sure you using single quotes in this command to preserve the valid `json` format.
+
+. You can only use one pull secret when mirroring the images to your local container registry as well as when you install OpenShift, so you need to merge the pull secrets you created in the previous two steps into a single `json` file named `merged_pullsecret.json`.
++
+[source,subs="{markup-in-source}"]
+----
+# *jq -c --argjson var "$(jq .auths ~/pullsecret_config.json)" '.auths += $var' ~/ocp_pullsecret.json > merged_pullsecret.json*
+# *jq . merged_pullsecret.json*
+
+{
+  "auths": {
+    "cloud.openshift.com": {
+      "auth": "c2UtZGV2K25zdGVwaGFuMWRma210U2M2VuYTZxZ2R4bHJwOklJaVkVXMUJDVTFESVBTN0hISjhRR1E5UDI5WEFJNEVQSUw2TjNQN0o0R1ZaQVRYR0U=",
+      "email": "<your-email>"
+    },
+    "quay.io": {
+      "auth": "GV2K25zdGVwaGFuMWRma210bHJwdU2M2VuYTZxZ2R4bFHSlJaVkVXMUJDVTFESVBTN0hISjhRR1E5UDI5WEFJNEVQSUw2TjNQN0o0R1ZaQVRYR0U=",
+      "email": "<your-email>"
+    },
+    "registry.connect.redhat.com": {
+      "auth": "NaUo5LmV5SnpkV0lpT2lKall6VmtZelJqWVRNd05UZzBZelkyWWpFeVkyTTVNMlUxWVRNNU0yRm1aU0o5LkFnWW00SjB5R1d4OHZ4bDNhcnVJSlFrTEFHb2NiVEQ4dkRNNUdIdEZpQU4zOGp4bXkyMlJLX004MGN2alZBa3FUWjJobEJqQ25kMGNEdlTUx6TmozSjNKVmxZWm9VMVR0OXNxa25vYWxWdTJEZ0xDalVPeHlOUVFTd0NuMTN3WFoxTl9DWnNXekxhU0tFZzc0VzUtR1YzTGVHZU92RV9EdTlld3RjVROXBfUXBZYzR0elpKczlrUHFlakVnNC1xOU0tVjBqajY4NGd3dk90TGYzcmV1VjJBLTFuS2ltRXNnVGhlbHloVllzSENaWVFveHNkNmFjZnVMMnhSa01KMXAyeVJBREhoNXJhUG51Nnh0Qjk1VmdhTVl4dkVURk43X2ctXzVqTWFGSnF6Ynk5Q2JxaHFRT1VNZnFFNHQzclltUGVIMkp0MTRMVWVkRHlDbzJXWUhzMlRjeGNYbUd1VFhmR2xvdmlYeXV0MDBfRndXM1N0MDhHLVlJX1htYXpWclRuVV92QVl2Tm5waWNPMzZVYUxoUXp2dUJ2ZnQtQUc5eEY1dDIwakZrZTNHZDhiNWxTN0tSUVRsRHNnQmRqbmkxQnZNYUJad2NQWEVieFd6dFJYNmdndXR1Z1lNNnJfc3E2ODJOZlRoeUdjLTE2RkZBNjdwWExWS0JyY1BlZzY4RWd6QV9HdC16MzlCWktSVTRwVnowbjRpX085WlV3MGlvbDlKVGJQcU5mZ1JRYWNUaEZzeHJWd3E3aVB4Zk5ZZWV0aC1zVWI5UWpPTDN2amNzV05qdGRGU2huSWVwTFVMOUlsWjB2YUR5clBB",
+      "email": "<your-email>"
+    },
+    "registry.redhat.io": {
+      "auth": "4OHZ4bDNhcnVJSlFrTEFHb2NiVEQ4dkRNNUdIdEZpQU4zOGp4bXkyMlJLX004MGN2alZBa3FUWjJobEJqQ25kMGNYTVhxaXNFSlBxdzJOT3dlU0o1TGZxMEdlTUx6TmozSjNKVmxZWm9VMVR0OXNxa25vYWxWdTJEZ0xDalVPeHlOUVFTd0NuMTN3WFoxTl9TGVHZU92RV9EdTlld3NBMWt5MkYyMi01NlVES2w2Nmc4cU5waWlDRjVROXBfUXBZYzR0elpKczlrUHFlakVnNC1xOU0tVjBqajY4NGd3dk90TGYzcmV1VjJBLTFuS2ltRXNnVGhlbHloVllzSENaWVFveHNkNmFjZnVMMnhSa01KMXAyeVJBREhoNXJhUG51Nnh0Qjk1VmdhTVl4dkVURk43X2ctXzVqTWFGSnF6Ynk5Q2JxaHFRT1VNZnFFNHQzcllRjeGNYbUd1VFhmR2xvdmlYeXV0MDBfRndXM1N0MDhHLVlJX1htYXpWclRuVV92QVl2Tm5waWNPMzZVYUxoUXp2dUJ2ZnQtQUc5eEY1dDIwakZrZTNHZDhiNWxTN0tSUVRsRHNnQmRqbmkxQnZNYUJad2NQWEVieFd6dFJYNmdndXR1Z1lNNnJfc3E2ODJOZlRoeUdjLTE2RkZBNjdwWExWS0JyY1BlZzY4RWd6QV9HdC16MzlCWktSVTRwVnowbjRpX085WlV3MGlvbDlKVGJQcU5mZ1JRYWNUaEZzeHJWd3EG4xYjNpQzZDbnV0aC1zVWI5UWpPTDN2amNzV05qdGRGU2huSWVwTFVMOUlsWjB2YUR5clBB",
+      "email": "<your-email>"
+    },
+    "utilityvm.opentlc.internal:5000": {
+      "auth": "b3BlbnNoaWZ0OnJlZGhhdA=="
+    }
+  }
+}
+----
++
+* The output above is a *sample*. Yours should be different. If you try to use this, you will fail.
+* This file is a combination of the `auths` from your OpenShift pull secret and your local container registry pull secret.
+
+. Set the following environment variables. This is not a required step to mirror content, but it will make subsequent command easier. Most of these are self-explanatory, but some additional details are included after the commands below.
++
+[source,subs="{markup-in-source}"]
+----
+# *ansible localhost -m lineinfile -a 'path=~/.bashrc regexp="^export LOCAL_REGISTRY" line="export LOCAL_REGISTRY=utilityvm.opentlc.internal:5000"'*
+# *ansible localhost -m lineinfile -a 'path=~/.bashrc regexp="^export LOCAL_REPOSITORY" line="export LOCAL_REPOSITORY=ocp4/openshift4"'*
+# *ansible localhost -m lineinfile -a 'path=~/.bashrc regexp="^export LOCAL_SECRET_JSON" line="export LOCAL_SECRET_JSON=/home/$USER/merged_pullsecret.json"'*
+# *ansible localhost -m lineinfile -a 'path=~/.bashrc regexp="^export PRODUCT_REPO" line="export PRODUCT_REPO=openshift-release-dev"'*
+# *ansible localhost -m lineinfile -a 'path=~/.bashrc regexp="^export RELEASE_NAME" line="export RELEASE_NAME=ocp-release"'*
+# *source ~/.bashrc*
+----
++
+* `LOCAL_REGISTRY` is the container registry you installed on your `Utility VM`. If you were doing this in another environment, it would be the container registry that you want to mirror the container images *to*.
+* `LOCAL_REPOSITORY` is the repository and image name that you want to push the images to. You should choose something descriptive here, but the choice is yours.
+* `LOCAL_SECRET_JSON` is the merged pull secret you created. This pull secret containers credentials to pull the OpenShift images and push them to your local container registry. This must be set to the *absolute path*.
+* `PRODUCT_REPO` is the repository you are mirroring the images *from*. Do not change this.
+* `RELEASE_NAME` refers to the images your will be pulling. Do not change this.
++
+WARNING: Do not forget to source your `.bashrc` file in the section above. If you do not, none of the environment variables will be available and you will fail on subsequent steps.
+
+. All of your pre-requisites are finally complete and you are ready to mirror the OpenShift 4 content to your local container registry! As discussed earlier, the process in OpenShift 4 is much easier than it used to be. The following command will do everything necessary. Run this on your `bastion`.
++
+[source,subs="{markup-in-source}"]
+----
+# *oc adm -a ${LOCAL_SECRET_JSON} release mirror \
+     --from=quay.io/${PRODUCT_REPO}/${RELEASE_NAME}:${OCP_RELEASE} \
+     --to=${LOCAL_REGISTRY}/${LOCAL_REPOSITORY} \
+     --to-release-image=${LOCAL_REGISTRY}/${LOCAL_REPOSITORY}:${OCP_RELEASE}*
+----
+
+. If your command runs successfully, you should have output similar to this. There is a lot happening here, but it basically comes down to letting OpenShift decide what images it needs rather than you providing a static (and usually outdated) list. All of the required images are pulled from `quay.io` and pushed to your container registry running on `utilityvm.opentlc.internal`.
++
+.Sample Output
+[source,subs="{markup-in-source}"]
+----
+info: Mirroring 99 images to utilityvm.opentlc.internal:5000/ocp4/openshift4 ...
+utilityvm.opentlc.internal:5000/
+  ocp4/openshift4
+    blobs:
+      quay.io/openshift-release-dev/ocp-release sha256:4eb632baec6013ce22a7335715b875917406f6972638b813bab12e1703af8674 1.454KiB
+      quay.io/openshift-release-dev/ocp-release sha256:bff3b73cbcc496de1de4ea51df88b7249169d0b6eb7d677169eaf90b8a92240e 1.575KiB
+      ...
+      ...
+phase 0:
+  utilityvm.opentlc.internal:5000 ocp4/openshift4 blobs=207 mounts=0 manifests=99 shared=5
+
+info: Planning completed in 18.8s
+uploading: utilityvm.opentlc.internal:5000/ocp4/openshift4 sha256:7b1c937e0f6794db2535be6e4cb6d60a0b668ef78c2576611a3fb9c97a95ccdf 72.71MiB
+uploading: utilityvm.opentlc.internal:5000/ocp4/openshift4 sha256:9fbc3152112759b4acd715b4dd2f431b174de582057f0dd63c8c7087a5dff60a 495.7KiB
+...
+...
+sha256:59a4734e085c16e795d391a557743972255a795fd1c69d8d75d3949d1917ff76 utilityvm.opentlc.internal:5000/ocp4/openshift4:cluster-kube-scheduler-operator
+sha256:2ac8baef4ac207438a035555d56fd76e0a34ab6263e0765ed0068f3897b40d49 utilityvm.opentlc.internal:5000/ocp4/openshift4:operator-lifecycle-manager
+info: Mirroring completed in 58.2s (80.4MB/s)
+
+Success
+Update image:  utilityvm.opentlc.internal:5000/ocp4/openshift4:4.2.0
+Mirror prefix: utilityvm.opentlc.internal:5000/ocp4/openshift4
+
+To use the new mirrored repository to install, add the following section to the install-config.yaml:
+
+imageContentSources:
+- mirrors:
+  - utilityvm.opentlc.internal:5000/ocp4/openshift4
+  source: quay.io/openshift-release-dev/ocp-release
+- mirrors:
+  - utilityvm.opentlc.internal:5000/ocp4/openshift4
+  source: quay.io/openshift-release-dev/ocp-v4.0-art-dev
+
+
+To use the new mirrored repository for upgrades, use the following to create an ImageContentSourcePolicy:
+
+apiVersion: operator.openshift.io/v1alpha1
+kind: ImageContentSourcePolicy
+metadata:
+  name: example
+spec:
+  repositoryDigestMirrors:
+  - mirrors:
+    - utilityvm.opentlc.internal:5000/ocp4/openshift4
+    source: quay.io/openshift-release-dev/ocp-release
+  - mirrors:
+    - utilityvm.opentlc.internal:5000/ocp4/openshift4
+    source: quay.io/openshift-release-dev/ocp-v4.0-art-dev
+----
++
+* As of the 4.2.1 release, there are 99 images that are mirrored into your local container registry.
+* *Make note of the output*. You will need to use the `imageContentSources` in the next section.
+
+endif::[]
+
+. To verify that all the images are indeed available in your container registry, try pulling one. Note that you'll have to provide your `authfile` since you are not logged in to the container registry with `podman`.
++
+[source,subs="{markup-in-source}"]
+----
+# *podman pull --authfile ~/pullsecret_config.json utilityvm.opentlc.internal:5000/ocp4/openshift4:operator-lifecycle-manager*
+
+Trying to pull utilityvm.opentlc.internal:5000/ocp4/openshift4:operator-lifecycle-manager...Getting image source signatures
+Copying blob c8edbb1a12ff done
+Copying blob ab4c627ff228 done
+Copying blob 625343e25cce done
+Copying blob 7b1c937e0f67 done
+Copying blob bff3b73cbcc4 done
+Copying config d6cb2d36b4 done
+Writing manifest to image destination
+Storing signatures
+d6cb2d36b4b15d2f3ad0ca7c6b8443a23f7c4e34ca31b9211f04745fc5b87178
+
+# *podman images*
+
+REPOSITORY                                        TAG                          IMAGE ID       CREATED       SIZE
+utilityvm.opentlc.internal:5000/ocp4/openshift4   operator-lifecycle-manager   d6cb2d36b4b1   3 weeks ago   407 MB
+----
+
+. Take a minute to verify the version information you have downloaded. Again, you can use the `oc adm release` command.
++
+[source,subs="{markup-in-source}"]
+----
+# *oc adm release info -a ~/merged_pullsecret.json "${LOCAL_REGISTRY}/${LOCAL_REPOSITORY}:${OCP_RELEASE}" | head -n 20*
+
+Name:          4.2.1
+Digest:        sha256:32f2e138c0c5af6183830a22801f627bedb414591332960b7c8506ba7f6d7bb6
+Created:       2019-10-24T15:44:09Z
+OS/Arch:       linux/amd64
+Manifests:     324
+Unknown files: 4
+
+Pull From: utilityvm.opentlc.internal:5000/ocp4/openshift4@sha256:32f2e138c0c5af6183830a22801f627bedb414591332960b7c8506ba7f6d7bb6
+
+Release Metadata:
+  Version:  4.2.1
+  Upgrades: 4.1.20, 4.1.21, 4.2.0-rc.4, 4.2.0-rc.5
+  Metadata:
+    description:
+  Metadata:
+    url: https://access.redhat.com/errata/RHBA-2019:3151
+
+Component Versions:
+  Kubernetes 1.14.6
+----
+
+. You can compare this information with what you would get from doing a connected install. Run the same command, but point it to the Red Hat repositories hosted on `quay.io`. Except for the "Pull From" line, this should look identical to your output above.
++
+[source,subs="{markup-in-source}"]
+----
+# *oc adm release info -a ~/merged_pullsecret.json "quay.io/${PRODUCT_REPO}/${RELEASE_NAME}:${OCP_RELEASE}" | head -n 20*
+
+Name:          4.2.1
+Digest:        sha256:32f2e138c0c5af6183830a22801f627bedb414591332960b7c8506ba7f6d7bb6
+Created:       2019-10-24T15:44:09Z
+OS/Arch:       linux/amd64
+Manifests:     324
+Unknown files: 4
+
+Pull From: quay.io/openshift-release-dev/ocp-release@sha256:32f2e138c0c5af6183830a22801f627bedb414591332960b7c8506ba7f6d7bb6
+
+Release Metadata:
+  Version:  4.2.1
+  Upgrades: 4.1.20, 4.1.21, 4.2.0-rc.4, 4.2.0-rc.5
+  Metadata:
+    description:
+  Metadata:
+    url: https://access.redhat.com/errata/RHBA-2019:3151
+
+Component Versions:
+  Kubernetes 1.14.6
+----
+
+You now have all of the container images necessary to install an OpenShift 4 cluster in a disconnected environment. You didn't have to look up a list or write a script or do anything other than know what version of OpenShift 4 you wanted to install, gather a few pieces of data from the documentation, and run a simple command. In addition to the images, you also have the `imageContentSources` data you will need to provide to the installer so that it knows where to pull the images from.
+
+=== Prepare Installation Artifacts
+
+The OpenShift installer can do a full cluster install and deploy an opinionated cluster using the IPI method. To do this, you run a simple command - `openshift-install create cluster`. With simple comes lack of options, though. Since you need to point your installer to use your mirrored images, you must perform this installtion using the UPI method. There are several phases of the `openshift-install` tool that you will have to work through.
+
+Before you get started on creating all of the installation artifacts required, you are missing a key piece - the `openshift-install` binary! If you were doing a connected install, you would want to visit the link:https://mirror.openshift.com/pub/openshift-v4/clients/ocp/[OpenShift mirror downloads^] site. The version of `openshift-install` that you downloaded would know the exact images to retrieve for you during the install. However, in a disconnected install you are doing it the other way around. You already have the images and you need to make sure you use the correct version of the installer. Instead of searching for the correct version and trying to download it from the Internaet, you can extract it from the images you have already mirrored into your environment. This guarantees you have the correct version.
+
+. On your `bastion`, run the following command. This will extract the `openshift-install` binary from images you have already mirrored. The `openshift-install` binary will then exist and be executable on your `bastion`. This ensures you have a version of the installer that matches the payload and images your downloaded.
++
+[source,subs="{markup-in-source}"]
+----
+# *oc adm release extract -a ~/merged_pullsecret.json --command=openshift-install "${LOCAL_REGISTRY}/${LOCAL_REPOSITORY}:${OCP_RELEASE}"*
+# *ls -l*
+
+total 310972
+-rw-r--r--. 1 nstephan-redhat.com users      2797 Nov  1 17:08 merged_pullsecret.json
+-rw-r--r--. 1 nstephan-redhat.com users      2727 Nov  1 17:08 ocp_pullsecret.json
+-rw-r--r--. 1 nstephan-redhat.com users  24533950 Oct 10 18:04 openshift-client-linux-4.2.0.tar.gz
+-rwxr-xr-x. 1 nstephan-redhat.com users 293887936 Oct 10 17:49 openshift-install
+-rwxr-xr-x. 1 nstephan-redhat.com users        99 Nov  1 15:15 pullsecret_config.json
+----
+
+. Copy this file to a location that is in your `$PATH` and will make it easier to use.
++
+[source,subs="{markup-in-source}"]
+----
+# *sudo mv openshift-install /usr/local/sbin/*
+----
+
+. Ensure that your `openshift-install` is executable and that you are running an expected version pulled from an expected location.
++
+[source,subs="{markup-in-source}"]
+.Sample Output
+----
+# *openshift-install version*
+
+openshift-install v4.2.1
+built from commit e349157f325dba2d06666987603da39965be5319
+release image utilityvm.opentlc.internal:5000/ocp4/openshift4@sha256:32f2e138c0c5af6183830a22801f627bedb414591332960b7c8506ba7f6d7bb6
+----
+
+Now that you have the installer, you are ready to begin continuing the preparation for your installation. Before you proceed, think about everything you will need before you can start your first server in the bootstrap process.
+
+. Create a directory to hold all of your installation artifacts required for installation.
++
+[source,subs="{markup-in-source}"]
+----
+# *mkdir -p ~/openstack-upi*
+# *cd ~/openstack-upi*
+----
+
+. Create the installation artifacts that satisfy the following requirements:
+* An `install-config.yaml` that has the following defined:
+** Uses the `$GUID-ocp-subnet` CIDR you were provided in this lab
+** Deploys *zero* compute machines
+** Has an alternate source for images in `imageContentSources`
+** Provides a certificate for local container registry in `additionalTrustBundle`
+** A merged pull secret with credentials to both Red Hat registries and local container registry
+** The API floating IP, which can be found in the `$API_FIP` *bash* environment variable
+** The SSH key in your user's `.ssh` directory
+** A base domain of `blue.osp.opentlc.com`
+** A cluster name of `$GUID`
+** Master & bootstrap should use a flavor of `4c16g30d`, which will provide 4 vCPU and 16Gi memory
+** Your external network is `external`
+
+ifeval::[{show_solution == true}]
+
+. Begin by collecting the information you will need. If you have not already done so, you can reference the link:https://docs.openshift.com/container-platform/4.2/installing/installing_openstack/installing-openstack-installer-custom.html#installation-configuration-parameters_installing-openstack-installer-custom[Openshift docs^] for some hints.
+
+. Before you run the `openshift-install` command, find the Floating IP for your OpenShift API and the DNS zone you will be using. They have been added as an environment variable for you.
++
+[source,subs="{markup-in-source}"]
+----
+# *echo $API_FIP*
+# *echo $OPENSHIFT_DNS_ZONE*
+----
+
+. Run `openshift-install` to create your `install-config.yaml` file. Answer the questions using the information you have gathered.
++
+[source,subs="{markup-in-source}"]
+.Sample Output
+----
+# *openshift-install create install-config --dir ~/openstack-upi*
+
+? SSH Public Key /home/nstephan-redhat.com/.ssh/sten1key.pub
+? Platform openstack
+? Cloud $GUID-project
+? ExternalNetwork external
+? APIFloatingIPAddress 169.47.183.8 <<<< Use the value of $API_FIP here
+? FlavorName 4c16g30d
+? Base Domain blue.osp.opentlc.com <<<< Use the value of $OPENSHIFT_DNS_ZONE here
+? Cluster Name $GUID
+? Pull Secret [? for help] ***********
+----
+
+. Edit your generated `install-config.yaml` to update additional values as specified in the requirements. Your final `install-config.yaml` should look like this example.
++
+[source,subs="{markup-in-source}"]
+.Sample Output
+----
+apiVersion: v1
+baseDomain: blue.osp.opentlc.com
+compute:
+- hyperthreading: Enabled
+  name: worker
+  platform: {}
+  replicas: 0 <1>
+controlPlane:
+  hyperthreading: Enabled
+  name: master
+  platform:
+    openstack:
+      type: 4c16g30d <2>
+  replicas: 3
+metadata:
+  creationTimestamp: null
+  name: $GUID <3>
+networking:
+  clusterNetwork:
+  - cidr: 10.128.0.0/14
+    hostPrefix: 23
+  machineCIDR: 192.168.47.0/24 <4>
+  networkType: OpenShiftSDN
+  serviceNetwork:
+  - 172.30.0.0/16
+platform:
+  openstack:
+    cloud: $GUID-project
+    computeFlavor: 4c16g30d <5>
+    externalNetwork: external
+    lbFloatingIP: 169.47.188.136 <6>
+    octaviaSupport: "1"
+    region: ""
+    trunkSupport: "1"
+pullSecret: '{"auths":{"cloud.openshift.com":{"auth":"b3BlbnNoaWZ0LXJlbGVhc2UtZGV2K25zdGVwaGFuMWRma210bHJwdmlpZ3U2M2VuYTZxZ2R4bHJwOkJNTTZOOFI5MVRUOEFHSlJaVkVXMUJDVTFESVBTN0hISjhRR1E5UDI5WEFJNEVQSUw2TjNQN0o0R1ZaQVRYR0U=","email":"nstephan@redhat.com"},"quay.io":{"auth":"b3BlbnNoaWZ0LXJlbGVhc2UtZGV2K25zdGVwaGFuMWRma210bHJwdmlpZ3U2M2VuYTZxZ2R4bHJwOkJNTTZOOFI5MVRUOEFHSlJaVkVXMUJDVTFESVBTN0hISjhRR1E5UDI5WEFJNEVQSUw2TjNQN0o0R1ZaQVRYR0U=","email":"nstephan@redhat.com"},"registry.connect.redhat.com":{"auth":"Nzc5NjE4MXx1aGMtMURma010THJQdmlJR3U2M2VuYTZRZ2R4THJwOmV5SmhiR2NpT2lKU1V6VXhNaUo5LmV5SnpkV0lpT2lKall6VmtZelJqWVRNd05UZzBZelkyWWpFeVkyTTVNMlUxWVRNNU0yRm1aU0o5LkFnWW00SjB5R1d4OHZ4bDNhcnVJSlFrTEFHb2NiVEQ4dkRNNUdIdEZpQU4zOGp4bXkyMlJLX004MGN2alZBa3FUWjJobEJqQ25kMGNYTVhxaXNFSlBxdzJOT3dlU0o1TGZxMEdlTUx6TmozSjNKVmxZWm9VMVR0OXNxa25vYWxWdTJEZ0xDalVPeHlOUVFTd0NuMTN3WFoxTl9DWnNXekxhU0tFZzc0VzUtR1YzTGVHZU92RV9EdTlld3NBMWt5MkYyMi01NlVES2w2Nmc4cU5waWlDRjVROXBfUXBZYzR0elpKczlrUHFlakVnNC1xOU0tVjBqajY4NGd3dk90TGYzcmV1VjJBLTFuS2ltRXNnVGhlbHloVllzSENaWVFveHNkNmFjZnVMMnhSa01KMXAyeVJBREhoNXJhUG51Nnh0Qjk1VmdhTVl4dkVURk43X2ctXzVqTWFGSnF6Ynk5Q2JxaHFRT1VNZnFFNHQzclltUGVIMkp0MTRMVWVkRHlDbzJXWUhzMlRjeGNYbUd1VFhmR2xvdmlYeXV0MDBfRndXM1N0MDhHLVlJX1htYXpWclRuVV92QVl2Tm5waWNPMzZVYUxoUXp2dUJ2ZnQtQUc5eEY1dDIwakZrZTNHZDhiNWxTN0tSUVRsRHNnQmRqbmkxQnZNYUJad2NQWEVieFd6dFJYNmdndXR1Z1lNNnJfc3E2ODJOZlRoeUdjLTE2RkZBNjdwWExWS0JyY1BlZzY4RWd6QV9HdC16MzlCWktSVTRwVnowbjRpX085WlV3MGlvbDlKVGJQcU5mZ1JRYWNUaEZzeHJWd3E3aVB4Zk5ZZW1NUFdQUG4xYjNpQzZDbnV0aC1zVWI5UWpPTDN2amNzV05qdGRGU2huSWVwTFVMOUlsWjB2YUR5clBB","email":"nstephan@redhat.com"},"registry.redhat.io":{"auth":"Nzc5NjE4MXx1aGMtMURma010THJQdmlJR3U2M2VuYTZRZ2R4THJwOmV5SmhiR2NpT2lKU1V6VXhNaUo5LmV5SnpkV0lpT2lKall6VmtZelJqWVRNd05UZzBZelkyWWpFeVkyTTVNMlUxWVRNNU0yRm1aU0o5LkFnWW00SjB5R1d4OHZ4bDNhcnVJSlFrTEFHb2NiVEQ4dkRNNUdIdEZpQU4zOGp4bXkyMlJLX004MGN2alZBa3FUWjJobEJqQ25kMGNYTVhxaXNFSlBxdzJOT3dlU0o1TGZxMEdlTUx6TmozSjNKVmxZWm9VMVR0OXNxa25vYWxWdTJEZ0xDalVPeHlOUVFTd0NuMTN3WFoxTl9DWnNXekxhU0tFZzc0VzUtR1YzTGVHZU92RV9EdTlld3NBMWt5MkYyMi01NlVES2w2Nmc4cU5waWlDRjVROXBfUXBZYzR0elpKczlrUHFlakVnNC1xOU0tVjBqajY4NGd3dk90TGYzcmV1VjJBLTFuS2ltRXNnVGhlbHloVllzSENaWVFveHNkNmFjZnVMMnhSa01KMXAyeVJBREhoNXJhUG51Nnh0Qjk1VmdhTVl4dkVURk43X2ctXzVqTWFGSnF6Ynk5Q2JxaHFRT1VNZnFFNHQzclltUGVIMkp0MTRMVWVkRHlDbzJXWUhzMlRjeGNYbUd1VFhmR2xvdmlYeXV0MDBfRndXM1N0MDhHLVlJX1htYXpWclRuVV92QVl2Tm5waWNPMzZVYUxoUXp2dUJ2ZnQtQUc5eEY1dDIwakZrZTNHZDhiNWxTN0tSUVRsRHNnQmRqbmkxQnZNYUJad2NQWEVieFd6dFJYNmdndXR1Z1lNNnJfc3E2ODJOZlRoeUdjLTE2RkZBNjdwWExWS0JyY1BlZzY4RWd6QV9HdC16MzlCWktSVTRwVnowbjRpX085WlV3MGlvbDlKVGJQcU5mZ1JRYWNUaEZzeHJWd3E3aVB4Zk5ZZW1NUFdQUG4xYjNpQzZDbnV0aC1zVWI5UWpPTDN2amNzV05qdGRGU2huSWVwTFVMOUlsWjB2YUR5clBB","email":"nstephan@redhat.com"},"utilityvm.opentlc.internal:5000":{"auth":"b3BlbnNoaWZ0OnJlZGhhdA=="}}}' <7>
+sshKey: |
+  ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDKxG3JC+G/Euffe7TMw+jX6xgYOo6GeJdxYqpeoH4ZNTUPKYT3lr12Anockd7n74iLQ9vXo1LiMGMoDzPuE0xFTke1XFJXfryn5x+bnV/zS1O4+MKpqu4VlpacsApVNwPSx9+ynpXwAMhP3mZwmTkCAbtQnUNZtyftTw/OPaahKx6lP7GuCO92Z1hlgGT6DAukiW20Z/t2qh6M5JjSEhjPYP1+YKEWjjIDZyj1O24y6Ie+JUaljLO4RPzDrQ+WdbdRDfC1W5IdAHBFRZHZ7RhJstvuv/aURnxzwLkU3vYUJLGcB+Zj1kTprESndM9F/V3WoAO01LDJGWODsyNbnqQN nstephan@MacBook-Pro
+imageContentSources: <8>
+- mirrors:
+  - utilityvm.opentlc.internal:5000/ocp4/openshift4
+  source: quay.io/openshift-release-dev/ocp-release
+- mirrors:
+  - utilityvm.opentlc.internal:5000/ocp4/openshift4
+  source: quay.io/openshift-release-dev/ocp-v4.0-art-dev
+additionalTrustBundle: | <9>
+  -----BEGIN CERTIFICATE-----
+  MIIGETCCA/mgAwIBAgIJAOaoQeFNmSo8MA0GCSqGSIb3DQEBCwUAMIGeMQswCQYD
+  VQQGEwJVUzETMBEGA1UECAwKV2FzaGluZ3RvbjEQMA4GA1UEBwwHU2VhdHRsZTEQ
+  MA4GA1UECgwHUmVkIEhhdDENMAsGA1UECwwER1BURTEjMCEGA1UEAwwadXRpbGl0
+  eXZtLm9wZW50bGMuaW50ZXJuYWwxIjAgBgkqhkiG9w0BCQEWE25zdGVwaGFuQHJl
+  ZGhhdC5jb20wHhcNMTkxMTAxMTc0NzM2WhcNMjAxMDMxMTc0NzM2WjCBnjELMAkG
+  A1UEBhMCVVMxEzARBgNVBAgMCldhc2hpbmd0b24xEDAOBgNVBAcMB1NlYXR0bGUx
+  EDAOBgNVBAoMB1JlZCBIYXQxDTALBgNVBAsMBEdQVEUxIzAhBgNVBAMMGnV0aWxp
+  dHl2bS5vcGVudGxjLmludGVybmFsMSIwIAYJKoZIhvcNAQkBFhNuc3RlcGhhbkBy
+  ZWRoYXQuY29tMIICIjANBgkqhkiG9w0BAQEFAAOCAg8AMIICCgKCAgEAvN+z6DZR
+  sOlb+JIu2njv67XITHhCRF7ydVtXQEHmUypyeOrFjBswHRIKhFo/0+/Z5vhXhMwY
+  j84xMAVyaFGnz4+WqJEGKfyUtXrTFyUfIFRQ6mKYwPsuFz7UhGNKQmSjSO3ujf6h
+  /yAHN7IlxxlKGXKhDvX4gR/6OBbW03U/S+1rxQ4n8hoUNIvoDRKGnO1NMg7/Yl1t
+  xv12blXdE04t2YsjJH/l5V69NLHGubcsAbfyDjazpET7dfBVbDEpdoSVnN92Zy62
+  BAKm94ktqUrdpH33QumwBrkr/GLUo6gbO/qu9LB1NwNF8FQbde2dpg62FHIsQich
+  7zrYnB+NjZEh4aMtC2fSzb8Y+yIu6TbfFIJpiVyM+2a4zO8o/YN4s7+JEttQPQCF
+  cGw8unD/OyRKE4vkStX1122iAXD8dwPeBesclWY2+JzoI5tBRlIWcp+TIh2IgMkw
+  ogY6NqAHroJj8gLZ31zM9c5qn+lTcZfdLeq66jhiy9VB4F6Oiw/mR7iGx35yZD5L
+  9Lu5WF2ealtJpAjgOuilQfHsetUk02Uw8FXKyWtPQkF92cIwDNwXXrBmNchQGTAx
+  JHKgj6bkwPYjC9OIbyIqqsTR8mndZbJRkA53xxt4QHXXwV5hy0twrGCq8inGTDcm
+  Pfs+iXf1oDa+Xv8yHS8yC2BIxdyON9eEGQUCAwEAAaNQME4wHQYDVR0OBBYEFDqh
+  6L/oiKdboNjxRpGyobhhgAz1MB8GA1UdIwQYMBaAFDqh6L/oiKdboNjxRpGyobhh
+  gAz1MAwGA1UdEwQFMAMBAf8wDQYJKoZIhvcNAQELBQADggIBAJ419b+bIAQa/khx
+  ueS3kguuCgN5neAdpbuzqvKQsEuDktpLdsypQo2pPuU/55iN04/aXSxa4tv9TQSf
+  y2NM2JasAn0zwKvVeZdKqEM1WTTecbYCBKO/r/7SvWcH6Ze93Ot0/Ah73L70SANl
+  Yj70/+w8KsnAFrDretiRJvLKimn3li0vRMygMfbm+P0cz1P/yb8HsoqffIZekS6X
+  fyYhzo6caIerPoX6TzzP6xHAPKEWV4uxwqP4LJoGq/9Z5gsrkoMuGjnki/E/GYnm
+  PNxXDGrtYR02Q2dxL2hDMvOyT6o3ydjHX3LpKjD4VIRCkrRRRIUxewuu39AJ9Sxc
+  J2BRBoAMI9kPhE6ooeSrcxGLFDRjugBsGXn6xpTx1NrCPeePktIpHbIhj2BUVB82
+  bxOA1lVL4aBqoGCMn7iz97AWFrW+XSFI4A0EgIsVTdyxVxUKUpb2jGryGHGd/4cq
+  ZJS8n2WIQhdqxCsGrUBzJFG9IntCRGgSE+pltOutlVzq7I4epS9oQOrSVW0RcDTP
+  TgWRkKTC2QY5wi9VMjQFaimzMzKYAiBrW6Nu0MaCzu3nFR/DnXyze0b+UzWDgfkl
+  tpRngWMSJJo/2REkqJh/buKMrXRDPGooKoDCmNXG5NNc5jBMJM/4wkZ5jhoivAer
+  VY/aiwI+Y9bIG6x7fXAi1P85pVuF
+  -----END CERTIFICATE-----
+----
++
+* A lot is happening in this file, let's review:
+<1> The number of workers has been changed to *zero*. This is a requirement for a UPI install and you will be adding workers manually later.
+<2> This defines a specific type of machine, or flavor in OpenStack, to be used for masters. You can define a different type for masters & workers. Additional types of machines can be added post installation.
+<3> This is the name of your cluster.
+<4> The `MachineCIDR` is the subnet that you will use for your VM IP addresses. This much match a subnet already created in your OpenStack IaaS environment.
+<5> The `type` defined here will be used for the `bootstrap`, but also as the default type for all machines unless otherwise defined.
+<6> This is the IP address that is to be used for the API. This `Floating IP` will be mapped to a specific port in OpenStack for all API traffic to be sent to the master nodes.
+<7> This is pull secret that includes credentials for the external registries and private container registry. Both are included for ease of use in this lab, but you could define _only_ the pull secret for your private container registry if you intended on being fully disconnected.
+<8> The `imageContentSource` comes from the mirroring command you ran earlier. This will tell the installation process (and cluster, once it is built) to redirect any image pulls for OpenShift components to this source.
+<9> The `additionalTrustBundle` is the certificate that is required to securely pull the container images. This will be added to your cluster for future pulls once the cluster is fully built. You can retrieve this from the `/etc/pki/ca-trust/source/anchors/domain.crt` file.
++
+WARNING: Make sure you follow `yaml` standards for indentation spacing. That means 2 spaces at a time.
+
+endif::[]
+
+. Once your `install-config.yaml` is correct, make a backup copy of it. It will be consumed in the next step and you might want to reference it or use it to start over if you make a mistake.
++
+[source,subs="{markup-in-source}"]
+----
+# *mkdir -p ~/backup*
+# *cp ~/openstack-upi/install-config.yaml ~/backup/*
+----
+
+. Create the `manifests`. This is the second stage of the installer that would normally happen and be hidden to you.
++
+[source,subs="{markup-in-source}"]
+----
+# *openshift-install create manifests --dir ~/openstack-upi*
+
+INFO Consuming "Install Config" from target directory
+WARNING Making control-plane schedulable by setting MastersSchedulable to true for Scheduler cluster settings
+----
+// TODO: Add better explanation of manifests
+. Look at the files created by `openshift-install`. A `manifest` is basically a definition of a Kubernetes object. In this list, you will have a number of "Core" manifests to begin bootstrapping the cluster. In addition, you'll have some OpenShift specific manifests.
++
+[source,subs="{markup-in-source}"]
+----
+# *tree*
+
+.
+├── manifests
+│   ├── 04-openshift-machine-config-operator.yaml
+│   ├── cloud-provider-config.yaml
+│   ├── cluster-config.yaml
+│   ├── cluster-dns-02-config.yml
+│   ├── cluster-infrastructure-02-config.yml
+│   ├── cluster-ingress-02-config.yml
+│   ├── cluster-network-01-crd.yml
+│   ├── cluster-network-02-config.yml
+│   ├── cluster-proxy-01-config.yaml
+│   ├── cluster-scheduler-02-config.yml
+│   ├── cvo-overrides.yaml
+│   ├── etcd-ca-bundle-configmap.yaml
+│   ├── etcd-client-secret.yaml
+│   ├── etcd-host-service-endpoints.yaml
+│   ├── etcd-host-service.yaml
+│   ├── etcd-metric-client-secret.yaml
+│   ├── etcd-metric-serving-ca-configmap.yaml
+│   ├── etcd-metric-signer-secret.yaml
+│   ├── etcd-namespace.yaml
+│   ├── etcd-service.yaml
+│   ├── etcd-serving-ca-configmap.yaml
+│   ├── etcd-signer-secret.yaml
+│   ├── image-content-source-policy-0.yaml
+│   ├── image-content-source-policy-1.yaml
+│   ├── kube-cloud-config.yaml
+│   ├── kube-system-configmap-root-ca.yaml
+│   ├── machine-config-server-tls-secret.yaml
+│   ├── openshift-config-secret-pull-secret.yaml
+│   └── user-ca-bundle-config.yaml
+└── openshift
+    ├── 99_cloud-creds-secret.yaml
+    ├── 99_kubeadmin-password-secret.yaml
+    ├── 99_openshift-cluster-api_master-machines-0.yaml
+    ├── 99_openshift-cluster-api_master-machines-1.yaml
+    ├── 99_openshift-cluster-api_master-machines-2.yaml
+    ├── 99_openshift-cluster-api_master-user-data-secret.yaml
+    ├── 99_openshift-cluster-api_worker-machineset-0.yaml
+    ├── 99_openshift-cluster-api_worker-user-data-secret.yaml
+    ├── 99_openshift-machineconfig_master.yaml
+    ├── 99_openshift-machineconfig_worker.yaml
+    ├── 99_rolebinding-cloud-creds-secret-reader.yaml
+    └── 99_role-cloud-creds-secret-reader.yaml
+
+2 directories, 41 files
+----
+
+. Typically, you are not expected to and discouraged from modifying the `manifests`. In a UPI install, you do need to make a few modifications. For this install, you need to make two changes:
+.. Set the masters to unscheduleable. This ensures that workloads such as `ingress controllers` won't try and fail to run on the master nodes.
++
+ifeval::[{show_solution == true}]
+
+[source,subs="{markup-in-source}"]
+----
+# *ansible localhost -m lineinfile -a 'path="~/openstack-upi/manifests/cluster-scheduler-02-config.yml" regexp="^  mastersSchedulable" line="  mastersSchedulable: false"'*
+# *cat ~/openstack-upi/manifests/cluster-scheduler-02-config.yml*
+
+apiVersion: config.openshift.io/v1
+kind: Scheduler
+metadata:
+  creationTimestamp: null
+  name: cluster
+spec:
+  mastersSchedulable: false
+  policy:
+    name: ""
+status: {}
+----
+
+endif::[]
++
+.. Remove the manifest that would create the `master` machines. You will be creating these manually later in this lab as part of the UPI installation.
++
+ifeval::[{show_solution == true}]
+
+[source,subs="{markup-in-source}"]
+----
+# **rm -f openshift/99_openshift-cluster-api_master-machines-\*.yaml**
+----
+
+endif::[]
+
+. Once your `manifests` are correctly modified, you are ready to move onto the last phase of preparation. Create your `ignition` files. Remember, the `ignition` files are what is used to help configure Red Hat Enterprise Linux CoreOS (RHCOS) on boot.
++
+[source,subs="{markup-in-source}"]
+----
+# *openshift-install create ignition-configs --dir ~/openstack-upi*
+
+INFO Consuming "Master Machines" from target directory
+INFO Consuming "Worker Machines" from target directory
+INFO Consuming "Openshift Manifests" from target directory
+INFO Consuming "Common Manifests" from target directory
+----
+
+. Look at the new files created. This is what you need to boot your cluster, but you still need to make a few more changes. Like `manifests`, `ignition` files are not something you are normally expected to modify. To complete a disconnected UPI install on OpenStack, you do need to make a couple of changes. 
++
+[source,subs="{markup-in-source}"]
+----
+# *tree*
+
+.
+├── auth
+│   ├── kubeadmin-password
+│   └── kubeconfig
+├── bootstrap.ign
+├── master.ign
+├── metadata.json
+└── worker.ign
+
+1 directory, 6 files
+----
+
+. Set an environment variable for your `INFRA_ID`. This will make it easier to work with some of the subsequent commands in this lab.
++
+[source,subs="{markup-in-source}"]
+----
+# *ansible localhost -m lineinfile -a 'path=~/.bashrc regexp="^export INFRA_ID" line="export INFRA_ID=$(jq -r .infraID ~/openstack-upi/metadata.json)"'*
+# *source ~/.bashrc*
+----
+
+. Make sure your `$INFRA_ID` was set properly. It should look similar to this.
++
+[source,subs="{markup-in-source}"]
+.Sample Output
+----
+# *echo $INFRA_ID*
+
+$GUID-6d59s
+----
+
+. `Ignition` is a bit difficult to work with since you can't add to it in plain text. The data must be properly encoded and added to the `ignition` file. For the OpenShift 4 UPI install to work with OpenShift, you must add a few items to the file systems that will be created on the `bootstrap` node.
+// TODO: Add note about other tools that you can use to generate igntion files
+.. Create a file that will set the hostname to the OpenStack instance name.
+.. Add a `dhcp-client` config to NetworkManager.
+.. Add a `dhclient` configc
++
+[source,subs="{markup-in-source}"]
+----
+# *cd ~/openstack-upi*
+# *python3 ~/resources/update_ignition.py*
+----
++
+WARNING: Do not run this more than once. It will append multiple times to the `ignition` file and you will have to start over. This step is performed for you in a pure IPI install.
+
+. To see the values that were appended to your `bootstrap.ign` file, you can run the following command.
++
+[source,subs="{markup-in-source}"]
+----
+# *jq '.storage.files | map(select(.path=="/etc/dhcp/dhclient.conf", .path=="/etc/NetworkManager/conf.d/dhcp-client.conf", .path=="/etc/dhcp/dhclient.conf"))' bootstrap.ign*
+
+[
+  {
+    "path": "/etc/NetworkManager/conf.d/dhcp-client.conf",
+    "mode": 420,
+    "contents": {
+      "source": "data:text/plain;charset=utf-8;base64,W21haW5dCmRoY3A9ZGhjbGllbnQK",
+      "verification": {}
+    },
+    "filesystem": "root"
+  },
+  {
+    "path": "/etc/dhcp/dhclient.conf",
+    "mode": 420,
+    "contents": {
+      "source": "data:text/plain;charset=utf-8;base64,c2VuZCBkaGNwLWNsaWVudC1pZGVudGlmaWVyID0gaGFyZHdhcmU7CnByZXBlbmQgZG9tYWluLW5hbWUtc2VydmVycyAxMjcuMC4wLjE7Cg==",
+      "verification": {}
+    },
+    "filesystem": "root"
+  },
+  {
+    "path": "/etc/dhcp/dhclient.conf",
+    "mode": 420,
+    "contents": {
+      "source": "data:text/plain;charset=utf-8;base64,c2VuZCBkaGNwLWNsaWVudC1pZGVudGlmaWVyID0gaGFyZHdhcmU7CnByZXBlbmQgZG9tYWluLW5hbWUtc2VydmVycyAxMjcuMC4wLjE7Cg==",
+      "verification": {}
+    },
+    "filesystem": "root"
+  }
+]
+----
++
+TIP: The data is encoded. If you want to see the values, you can use `base64 -d`.
+
+. Lastly, for `ignition` changes, you must create ignition files for the 3 master nodes you will create. Run the command below to create these files.
++
+[source,subs="{markup-in-source}"]
+----
+# *for index in $(seq 0 2); do
+    MASTER_HOSTNAME="$INFRA_ID-master-$index\n"
+    python3 -c "import base64, json, sys;
+ignition = json.load(sys.stdin);
+files = ignition['storage'].get('files', []);
+files.append({'path': '/etc/hostname', 'mode': 420, 'contents': {'source': 'data:text/plain;charset=utf-8;base64,' + base64.standard_b64encode(b'$MASTER_HOSTNAME').decode().strip(), 'verification': {}}, 'filesystem': 'root'});
+ignition['storage']['files'] = files;
+json.dump(ignition, sys.stdout)" <master.ign >"$INFRA_ID-master-$index-ignition.json"
+done*
+----
++
+* This will create 3 files, named `$INFRA_ID-master-0-igntion.json` or similar.
+* The hostname will be encoded and set in RHCOS to match the name of the OpenStack instance.
+
+Once the `ignition` files are complete, you are ready to move to the next stage. The `bootstrap.ign` is too large to be passed to the OpenStack instance via user-data when it is started, so it has to be hosted somewhere else. You can host this anywhere that is accessible via HTTP(S). For this lab, you will be using a simple `httpd` server running on your `utilityVM`. Other options exist for hosting this file, such as Amazon S3 or Swift object storage in OpenStack. The IPI installer uses Swift when installing OpenShift on OpenStack. Running the `httpd` server inside your OpenStack project has the added benefit of not being accessible from the outside.
+
+WARNING: Your `bootstrap.ign` file contains some sensitive credentials and certificate information. Do not keep it available in a publicly available location.
+
+. From your `bastion`, copy the `bootstrap.ign` file to the `utilityVM`. Copy it to the right location and set the SELinux context so it can be accessed.
++
+[source,subs="{markup-in-source}"]
+----
+# *scp bootstrap.ign utilityvm.opentlc.internal:*
+# *ssh utilityvm.opentlc.internal sudo mv bootstrap.ign /var/www/html/*
+# *ssh utilityvm.opentlc.internal sudo restorecon /var/www/html/bootstrap.ign*
+----
+
+. Make sure your `bootstrap.ign` is accessible.
++
+[source,subs="{markup-in-source}"]
+----
+# *wget -O ~/mybootstrap.ign http://utilityvm.opentlc.internal/bootstrap.ign*
+----
+
+// . To use `Swift`, you will need to create a `Temp URL`. This is a URL that will point to your `bootstrap.ign` file, but only be valid for a finite amount of time before it expires and no longer works. A key has already been set on your `Swift` account. Upload your `bootstrap.ign` file now.
+// +
+// [source,subs="{markup-in-source}"]
+// ----
+// # *openstack object create ignition bootstrap.ign*
+// # *openstack object set ignition bootstrap.ign --property Orig-Filename='bootstrap.ign'*
+// ----
+
+. Now, the only thing you need is a _new_ igntion file for your `bootstrap` node that will point to the real one. This is called the `bootstrap ignition shim`. This command will generate the file for you pointing to your real `bootstrap.ign` being hosted in from your `utility VM`. This new file is the `ignition` you will provide to the bootstrap node when starting it.
++
+[source,subs="{markup-in-source}"]
+----
+# *cat << EOF > ~/openstack-upi/$INFRA_ID-bootstrap-ignition.json
+{
+  "ignition": {
+    "config": {
+      "append": [
+        {
+          "source": "http://utilityvm.opentlc.internal/bootstrap.ign",
+          "verification": {}
+        }
+      ]
+    },
+    "security": {},
+    "timeouts": {},
+    "version": "2.2.0"
+  },
+  "networkd": {},
+  "passwd": {},
+  "storage": {},
+  "systemd": {}
+}
+EOF*
+----
+
+Congratulations! This was a long phase, but you are finished with your preparation work. 
+
+You have completed the following:
+
+* Deployed and configured a local container registry
+* Mirrored all required OpenShift container images to your local container registry
+* Created custom `install-config.yaml`
+* Customized the `manifests` as necessary for OpenStack UPI
+* Created the `ignition` files with encoded customizations
+
+== OpenShift Installation
+
+A lot of work is behind you. In the previous sections, you had to create and configure a lot of different things and you are not done yet! Think about what you have done and what you still need to create in order to have a functional OpenShift cluster. You essentially have:
+
+* Several installation files on your bastion
+* Container images cloned to your local container registry
+* An `ignition` file to bootstrap your cluster
+
+With all of these, you can start creating the actual servers that will make up your OpenShift 4 cluster.
+
+=== Review Provided Components
+
+In this lab environment, the following OpenStack components have been provided for you to use:
+
+* Project with quotas
+* Private network with subnet
+* Router to connect your private network to routed networks
+* Security Groups
+* Floating IPs with DNS entries
+
+Review the link:https://docs.openshift.com/container-platform/4.2/installing/installing_openstack/installing-openstack-installer-custom.html#installation-osp-default-deployment_installing-openstack-installer-custom[OpenShift Documentation^] for additional details on what you need to install a cluster on OpenStack.
+
+=== Create Bootstrap Node
+
+You are ready to start creating server in the OpenStack environment. What is the first thing you need to start an OpenShift 4 cluster once you have generated all of your installation artifacts in the previous section? Think about the bootstrap process you learned about.
+// TODO: Do we need to illustrate that in the lab guide again? nstephan thinks so...
+
+Since all of your servers will be running on a private network inside of OpenStack, you do need to provide a way to access them from outside of the OpenStack cluster. It is best to do this before the installation, so that the installation process can take advantage. 
+
+NOTE: All of these tasks should be done from your `bastion` while logged in as your OpenTLC ID.
+
+. From your `bastion`, create an OpenStack network port for API traffic. This port will be used and managed by OpenShift as the cluster is bootstrapped and configured. OpenShift will _attach_ the port to the correct servers.
++
+[source,subs="{markup-in-source}"]
+----
+# *openstack port create --network "$GUID-ocp-network" --security-group "$GUID-master_sg" --fixed-ip "subnet=$GUID-ocp-subnet,ip-address=192.168.47.5" --tag openshiftClusterID="$INFRA_ID" "$INFRA_ID-api-port" -f json*
+
+{
+  "admin_state_up": true,
+  "allowed_address_pairs": [],
+  "binding_host_id": null,
+  "binding_profile": null,
+  "binding_vif_details": null,
+  "binding_vif_type": null,
+  "binding_vnic_type": "normal",
+  "created_at": "2019-11-06T17:06:09Z",
+  "data_plane_status": null,
+  "description": "",
+  "device_id": "",
+  "device_owner": "",
+  "dns_assignment": [
+    {
+      "hostname": "host-192-0-2-5",
+      "ip_address": "192.168.47.5",
+      "fqdn": "host-192-168.47.5.opentlc.internal."
+    }
+  ],
+  "dns_domain": "",
+  "dns_name": "",
+  "extra_dhcp_opts": [],
+  "fixed_ips": [
+    {
+      "subnet_id": "ce58a42f-b708-4ca4-9026-728738172d02",
+      "ip_address": "192.168.47.5"
+    }
+  ],
+  "id": "ede9e6ff-5143-4947-be59-c45c55ee768f",
+  "location": {
+    "cloud": "sten1-project",
+    "region_name": "regionOne",
+    "zone": null,
+    "project": {
+      "id": "85183fe305844ebe9659c98be17ef76d",
+      "name": "sten1-project",
+      "domain_id": "default",
+      "domain_name": null
+    }
+  },
+  "mac_address": "fa:16:3e:1e:f0:ae",
+  "name": "cluster-sten1-6mprk-api-port",
+  "network_id": "ade36da4-de0b-4081-9681-fe1d8cbeadea",
+  "port_security_enabled": true,
+  "project_id": "85183fe305844ebe9659c98be17ef76d",
+  "propagate_uplink_status": null,
+  "qos_policy_id": null,
+  "resource_request": null,
+  "revision_number": 6,
+  "security_group_ids": [
+    "f65921a0-64be-4464-8641-24311b2301a6"
+  ],
+  "status": "DOWN",
+  "tags": [],
+  "trunk_details": null,
+  "updated_at": "2019-11-06T17:06:10Z"
+}
+----
++
+* This command does the following:
+** Creates a port named `$INFRA_ID-api-port` 
+** Assigns that port to the `$GUID-ocp-network` network
+** Assigns an internal static IP from the `$GUID-ocp-subnet`. You cannot change this IP address.
+** Assigns the `$GUID-master_sg` Security Group to this newly created port
+
+. Create another port for the Ingress traffic with the following options:
+.. Uses a fixed IP of `192.168.47.7`
+.. Uses the `$GUID-ocp-network` network 
+.. Uses the `$GUID-ocp-subnet` subnet
+.. Uses the `$GUID-worker_sg` security group 
+.. Named `$INFRA_ID-ingress-port`
+
+ifeval::[{show_solution == true}]
++
+[source,subs="{markup-in-source}"]
+----
+# *openstack port create --network "$GUID-ocp-network" --security-group "$GUID-worker_sg" --fixed-ip "subnet=$GUID-ocp-subnet,ip-address=192.168.47.7" --tag openshiftClusterID="$INFRA_ID" "$INFRA_ID-ingress-port"*
+----
+
+endif::[]
+
+. With these two network ports created, you need to assign them both a Floating IP. The Floating IP is what allows for external traffic to get into the private OpenStack networks. It is similar to an elastic IP in AWS or a static public IP in Azure.
++
+[source,subs="{markup-in-source}"]
+----
+# *openstack floating ip set --port "$INFRA_ID-api-port" $API_FIP*
+# *openstack floating ip set --port "$INFRA_ID-ingress-port" $INGRESS_FIP*
+----
+
+. Verify your Floating IP assignments to ensure they are assigned to the correct ports.
++
+[source,subs="{markup-in-source}"]
+.Sample Output
+----
+# *openstack floating ip list -c ID -c "Floating IP Address" -c "Fixed IP Address"*
+
++--------------------------------------+---------------------+------------------+
+| ID                                   | Floating IP Address | Fixed IP Address |
++--------------------------------------+---------------------+------------------+
+| 4f8e286a-827a-426e-998d-d2f421d3f89e | 169.47.188.105      | 192.0.2.5        |
+| 50dd1e88-6881-4d66-9680-f3ef9c7a54ae | 169.47.188.141      | 192.0.2.7        |
+| 5609c023-57f7-4a98-b314-e6fd125dd883 | 169.47.188.149      | 192.0.2.15       |
++--------------------------------------+---------------------+------------------+
+----
++
+NOTE: You will see a third Floating IP. This is the FIP used for your `bastion`, which is what allows you to SSH from your laptop.
+
+. Create another network port for your `bootstrap` server. With this port, you are adding some additional options with the `--allowed-address` switch. This is used by OpenShift to move these IPs and their associated ports between OpenShift nodes as necessary. This is done automatically by OpenShift to create a highly available API and Ingress solution.
++
+[source,subs="{markup-in-source}"]
+----
+# *openstack port create --network "$GUID-ocp-network" --security-group "$GUID-master_sg" --allowed-address ip-address=192.168.47.5 --allowed-address ip-address=192.168.47.6 --allowed-address ip-address=192.168.47.7 --tag openshiftClusterID="$INFRA_ID" "$INFRA_ID-bootstrap-port"*
+----
+
+. Finally, create your bootstrap server. This will be the first server you create in your OpenStack environment and it will use the results of everything you have done thus far.
++
+[source,subs="{markup-in-source}"]
+----
+# *openstack server create --image rhcos --flavor 4c16g30d --user-data "$HOME/openstack-upi/$INFRA_ID-bootstrap-ignition.json" --port "$INFRA_ID-bootstrap-port" --wait --property openshiftClusterID="$INFRA_ID" "$INFRA_ID-bootstrap"*
+----
+
+. At this point, your OpenShift cluster has started the bootstrapping process. It is a good idea to make sure that things are running as expected on the `bootstrap` server before you move forward with the next steps. SSH into your `bootstrap` server from your `bastion` server.
++
+[source,subs="{markup-in-source}"]
+----
+# *ssh -i ~/.ssh/${GUID}key.pem core@$INFRA_ID-bootstrap.opentlc.internal*
+----
+
+. Once logged into the `bootstrap` server, you can see what is happening by looking at the logs for the `bootkube` service. This process is what orchestrates the installation of the OpenShift components. You should see the service waiting for an `etcd` cluster, which cannot be created yet because you have not added any `master` nodes to your environment yet.
++
+[source,subs="{markup-in-source}"]
+----
+# *journalctl -b -f -u bootkube.service*
+
+-- Logs begin at Fri 2019-11-08 17:09:25 UTC. --
+Nov 08 17:11:09 cluster-sten1-ktkkp-bootstrap podman[3860]: 2019-11-08 17:11:09.763201736 +0000 UTC m=+4.618279073 container create 065c70ef98dcfddbfed3f5ace7de5a3f7c7327c01e814cdd5b94a6c397532247 (image=quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:c5e6386ddc6022088a6eb927402e335b086e83274fb5dc7b8a6f9e7da594ade5, name=etcd-signer)
+Nov 08 17:11:09 cluster-sten1-ktkkp-bootstrap podman[3860]: 2019-11-08 17:11:09.917052189 +0000 UTC m=+4.772129431 container init 065c70ef98dcfddbfed3f5ace7de5a3f7c7327c01e814cdd5b94a6c397532247 (image=quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:c5e6386ddc6022088a6eb927402e335b086e83274fb5dc7b8a6f9e7da594ade5, name=etcd-signer)
+Nov 08 17:11:09 cluster-sten1-ktkkp-bootstrap podman[3860]: 2019-11-08 17:11:09.930701182 +0000 UTC m=+4.785778415 container start 065c70ef98dcfddbfed3f5ace7de5a3f7c7327c01e814cdd5b94a6c397532247 (image=quay.io/openshift-release-dev/ocp-v4.0-art-dev@sha256:c5e6386ddc6022088a6eb927402e335b086e83274fb5dc7b8a6f9e7da594ade5, name=etcd-signer)
+Nov 08 17:11:09 cluster-sten1-ktkkp-bootstrap bootkube.sh[1688]: 065c70ef98dcfddbfed3f5ace7de5a3f7c7327c01e814cdd5b94a6c397532247
+Nov 08 17:11:09 cluster-sten1-ktkkp-bootstrap bootkube.sh[1688]: Waiting for etcd cluster...
+----
++
+TIP: If you don't see your `bootkube.service` starting, check the logs of the `release-image.service` to ensure that the image download has started. You can do this by running `journalctl -u release-image.service`.
+
+// TODO: Add something about how to see it getting images from local registry, not quay.io
+
+Your bootstrap node should now be up and running. It is waiting for master nodes to be added, which you will do in the next section.
+
+=== Create Masters
+
+The first phase of the bootstrapping process is complete if you've made it this far. You have a bootstrap node running and you have verified that the `bootkube.service` is running. What is it waiting for? It is waiting for `master` nodes. Your `master` nodes will run the production control plane, including `etcd`, which is needed first for the bootstrap process to continue.
+
+In this section, you will create three `master` nodes. You should follow the same process you have used in the previous section. Start by creating the network ports followed by the actual VMs. 
+
+. Open a new SSH session to your `bastion`. This allows you to leave the previous one running and observing the `bootkube` process.
++
+[source,subs="{markup-in-source}"]
+----
+# *ssh <your-username>@bastion.$GUID.blue.osp.opentlc.com*
+----
+
+. Verify that you can interact with OpenStack and see the current VMs deployed.
++
+[source,subs="{markup-in-source}"]
+.Sample Output
+----
+# *openstack server list -f json*
+
+[
+  {
+    "ID": "440ce611-47d2-406b-9c6a-339891cf412d",
+    "Name": "cluster-sten1-ktkkp-bootstrap",
+    "Status": "ACTIVE",
+    "Networks": "sten1-ocp-network=192.168.47.41",
+    "Image": "rhcos",
+    "Flavor": "4c16g30d"
+  },
+  {
+    "ID": "2b25a54e-aa86-4ab0-a752-8dc9079d3eb2",
+    "Name": "utilityvm",
+    "Status": "ACTIVE",
+    "Networks": "sten1-ocp-network=192.168.47.20",
+    "Image": "",
+    "Flavor": "2c2g30d"
+  },
+  {
+    "ID": "90c882d4-520e-4a31-9bba-56f75d3c5602",
+    "Name": "bastion",
+    "Status": "ACTIVE",
+    "Networks": "sten1-ocp-network=192.168.47.34, 169.47.183.22",
+    "Image": "",
+    "Flavor": "2c2g30d"
+  }
+]
+----
+
+. Create the network ports required for your masters. This command will create 3 ports for you - one for each master. Take note of where these ports are being created.
++
+[source,subs="{markup-in-source}"]
+----
+# *for index in $(seq 0 2); do
+    openstack port create --network "$GUID-ocp-network" --security-group "$GUID-master_sg" --allowed-address ip-address=192.168.47.5 --allowed-address ip-address=192.168.47.6 --allowed-address ip-address=192.168.47.7 --tag openshiftClusterID="$INFRA_ID" "$INFRA_ID-master-port-$index"
+done*
+----
++
+* The `$GUID-ocp-network` network is being used.
+* The `$GUID-master_sg` security group is being used.
+* Three IP addresses are being "allowed" on these ports. These IP addresses are used for API, DNS, and Ingress.
+* The port is being tagged with `openshiftClusterID="$INFRA_ID"`.
+
+. With your network ports created, you can proceed with creating your VMs. This command will create the 3 `master` nodes for you. Take note of what is being created and how it relates to the network ports you created in the previous step.
++
+[source,subs="{markup-in-source}"]
+----
+# *for index in $(seq 0 2); do
+    openstack server create --image rhcos --flavor 4c16g30d --user-data "$HOME/openstack-upi/$INFRA_ID-master-$index-ignition.json" --port "$INFRA_ID-master-port-$index" --property openshiftClusterID="$INFRA_ID" "$INFRA_ID-master-$index"
+done*
+----
+
+. How will these `master` nodes how to join the cluster and become the control plane? Look at the `ignition` file you passed to these on creation with `--user-data`. It tells `RHCOS` where to get its configuration from. 
++
+[source,subs="{markup-in-source}"]
+----
+# *jq .ignition.config ~/openstack-upi/$INFRA_ID-master-0-ignition.json*
+
+{
+  "append": [
+    {
+      "source": "https://192.168.47.5:22623/config/master",
+      "verification": {}
+    }
+  ]
+}
+----
+
+. This `source` IP is currently mapped to the `bootstrap` node. This means that these new `master` nodes will boot and get their full configuration from the `bootstrap` node. This is different than what you had to do for the `bootstrap` node, where you had to host a much larger `ignition` file somewhere else.
+
+. With your `master` nodes now created, switch back to your other SSH window and watch the `bootkube` process. It will check every ~10 minutes for the `etcd` cluster to be healthy before it continues the bootstrapping process.
+
+Your cluster is now almost up and running!
+
+=== Verify Bootstrapping
+
+Depending on when your `master` nodes booted and formed the etcd cluster, it could take several minutes for the bootstrap process to continue and finish. If you do not see your `etcd` cluster showing as healthy in the `bootkube` logs within 10 minutes, your cluster is not healthy.
+
+. Continue to watch the `bootkube` logs on your `bootstrap` node. When you see the following entries in the log file, your cluster is done bootstrapping. You can exit from the `bootstrap node`.
++
+[source,subs="{markup-in-source}"]
+----
+Nov 15 03:16:55 70aa-jggkw-bootstrap bootkube.sh[1716]: Tearing down temporary bootstrap control plane...
+Nov 15 03:16:55 70aa-jggkw-bootstrap bootkube.sh[1716]: bootkube.service complete
+----
+
+. On your `bastion`, run the following command. This will tell the `openshift-install` to check in on your install process and determine if the bootstrap phase of the installation is comlete.
++
+[source,subs="{markup-in-source}"]
+.Sample Output
+----
+# *openshift-install wait-for bootstrap-complete --dir ~/openstack-upi*
+
+INFO Waiting up to 30m0s for the Kubernetes API at https://api.cluster-sten1.blue.osp.opentlc.com:6443...
+INFO API v1.14.6+868bc38 up
+INFO Waiting up to 30m0s for bootstrapping to complete...
+INFO It is now safe to remove the bootstrap resources
+----
+
+. As the message above states, you are safe to remove the bootstrap resources. You have two resources to remove - the VM and the port you previously created for the `bootstrap` node. In an IPI install this would be done for you, but you will have to do it here.
++
+[source,subs="{markup-in-source}"]
+----
+# *openstack server delete "$INFRA_ID-bootstrap"*
+# *openstack port delete "$INFRA_ID-bootstrap-port"*
+----
+
+. At this point, you can interact with your cluster. You'll need to set credentials for yourself first.
++
+[source,subs="{markup-in-source}"]
+----
+# *ansible localhost -m lineinfile -a 'path=~/.bashrc regexp="^export KUBECONFIG" line="export KUBECONFIG=$HOME/openstack-upi/auth/kubeconfig"'*
+# *source ~/.bashrc*
+----
+
+. Check the current state of the `clusterversion`. Take note that the *STATUS* message will be different depending on when you run this.
++
+[source,subs="{markup-in-source}"]
+----
+# *oc get clusterversion*
+
+NAME      VERSION   AVAILABLE   PROGRESSING   SINCE   STATUS
+version             False       True          9m5s    Working towards 4.2.1: 99% complete
+----
+
+. Check the current state of the `clusteroperators`.
++
+[source,subs="{markup-in-source}"]
+.Sample Output
+----
+# *oc get clusteroperators*
+
+NAME                                       VERSION   AVAILABLE   PROGRESSING   DEGRADED   SINCE
+authentication                                       Unknown     Unknown       True       2m52s
+cloud-credential                           4.2.1     True        False         False      6m34s
+cluster-autoscaler                         4.2.1     True        False         False      119s
+console                                    4.2.1     Unknown     True          False      115s
+dns                                        4.2.1     True        False         False      6m20s
+image-registry                                       False       True          False      2m40s
+ingress                                    unknown   False       True          False      2m38s
+insights                                   4.2.1     True        False         False      6m34s
+kube-apiserver                             4.2.1     True        True          True       3m57s
+kube-controller-manager                    4.2.1     True        True          False      4m5s
+kube-scheduler                             4.2.1     True        True          False      3m53s
+machine-api                                4.2.1     True        False         False      6m29s
+machine-config                             4.2.1     True        False         False      5m31s
+marketplace                                4.2.1     True        False         False      2m3s
+monitoring                                           Unknown     True          Unknown    2m49s
+network                                    4.2.1     True        False         False      5m29s
+node-tuning                                4.2.1     True        False         False      2m41s
+openshift-apiserver                        4.2.1     True        False         False      2m46s
+openshift-controller-manager               4.2.1     True        False         False      3m49s
+openshift-samples                          4.2.1     True        False         False      95s
+operator-lifecycle-manager                 4.2.1     True        False         False      5m21s
+operator-lifecycle-manager-catalog         4.2.1     True        False         False      5m20s
+operator-lifecycle-manager-packageserver   4.2.1     True        False         False      2m46s
+service-ca                                 4.2.1     True        False         False      6m28s
+service-catalog-apiserver                  4.2.1     True        False         False      2m52s
+service-catalog-controller-manager         4.2.1     True        False         False      2m53s
+storage                                    4.2.1     True        False         False      2m46s
+----
++
+NOTE: All of the cluster operators will not be able to roll out until you have added regular `worker` nodes.
+
+If you see satisfactory output with both of those commands, you are ready for the next section - creating Workers.
+
+=== Create Workers
+
+Almost to the end! Your cluster is built and running, but it doesn't have any workers. Workers are required for some of the cluster operators to deploy their workloads. Without workers, your cluster will not finish installing. In an IPI install, this would happen automatically, but like all other steps in this UPI lab, you have to create the worker nodes manually.
+
+. On your bastion, create two VMs that meet these requirements. Remember to create the ports and VMs separately just like you did the `master` nodes.
+.. Network is `$GUID-ocp-network`
+.. Subnet is `$GUID-ocp-subnet`
+.. Security group is `$GUID-worker_sg`
+.. Allowed addresses are `192.168.47.5`, `192.168.47.6`, `192.168.47.7`
+.. Ports are named `$INFRA_ID-worker-port-0` and `$INFRA_ID-worker-port-1`
+.. Ports are tagged with `openshiftClusterID="$INFRA_ID"`
+.. VMs have a property set to `openshiftClusterID="$INFRA_ID"`
+.. VMs are named `$INFRA_ID-worker-0` and `$INFRA_ID-worker-0`
+.. VMs use a flavor of `4c8g30d`
+.. Use the `worker.ign` as ignition file passed as `user-data`
+
+ifeval::[{show_solution == true}]
++
+[source,subs="{markup-in-source}"]
+----
+# *for index in $(seq 0 1); do
+    openstack port create --network "$GUID-ocp-network" --security-group "$GUID-worker_sg" --allowed-address ip-address=192.168.47.5 --allowed-address ip-address=192.168.47.6 --allowed-address ip-address=192.168.47.7 --tag openshiftClusterID="$INFRA_ID" "$INFRA_ID-worker-port-$index"
+done*
+
+# *for index in $(seq 0 1); do
+    openstack server create --image rhcos --flavor 4c8g30d --user-data "$HOME/openstack-upi/worker.ign" --port "$INFRA_ID-worker-port-$index" --property openshiftClusterID="$INFRA_ID" "$INFRA_ID-worker-$index"
+done*
+----
+
+endif::[]
+
+. Because you are adding these `worker` nodes manually, they will not automatically be able to bootstrap and join the cluster. You will have to approve them. This is done so that not any random server that happenst to have access on your network can your your OpenShift cluster. Like the `master` nodes, the `worker` nodes will pull their `RHCOS` configurations from the control plane. Specifically, they will pull it from the `machine-config-server`, which will be discussed later.
++
+[source,subs="{markup-in-source}"]
+----
+# *jq ~/.ignition.config worker.ign*
+
+{
+  "append": [
+    {
+      "source": "https://192.168.47.5:22623/config/worker",
+      "verification": {}
+    }
+  ]
+}
+----
++
+NOTE: This is different from the `source` used by the `master` nodes.
+
+. To allow your new workers into the cluster, you have to approve their _certificate signing request_ or `CSR`. Watch for the `CSR` to come in. There will be one for each `worker` to bootstrap.
++
+[source,subs="{markup-in-source}"]
+.Sample Output
+----
+# *watch -n 10 oc get csr*
+
+NAME        AGE   REQUESTOR                                                                   CONDITION
+csr-9rs74   65s   system:serviceaccount:openshift-machine-config-operator:node-bootstrapper   Pending
+csr-bsdkx   32s   system:serviceaccount:openshift-machine-config-operator:node-bootstrapper   Pending
+csr-klw7h   18m   system:node:70aa-jggkw-master-0                                             Approved,Issued
+csr-lxvkl   32s   system:serviceaccount:openshift-machine-config-operator:node-bootstrapper   Pending
+csr-m7w8s   18m   system:serviceaccount:openshift-machine-config-operator:node-bootstrapper   Approved,Issued
+csr-q9k4n   18m   system:node:70aa-jggkw-master-1                                             Approved,Issued
+csr-s5xvw   18m   system:node:70aa-jggkw-master-2                                             Approved,Issued
+csr-v5j9c   18m   system:serviceaccount:openshift-machine-config-operator:node-bootstrapper   Approved,Issued
+csr-vzdq8   18m   system:serviceaccount:openshift-machine-config-operator:node-bootstrapper   Approved,Issued
+----
+
+. Once you see the `CSR`, you should not just approve it. You should inspect it to make sure it is coming from a source you trust.
++
+[source,subs="{markup-in-source}"]
+.Sample Output
+----
+# *oc describe csr csr-9rs74*
+
+Name:               csr-9rs74
+Labels:             <none>
+Annotations:        <none>
+CreationTimestamp:  Thu, 14 Nov 2019 22:29:47 -0500
+Requesting User:    system:serviceaccount:openshift-machine-config-operator:node-bootstrapper
+Status:             Pending
+Subject:
+         Common Name:    system:node:70aa-jggkw-worker-0
+         Serial Number:
+         Organization:   system:nodes
+Events:  <none>
+----
+
+. When you are satisifed that the `CSR` is coming from a trusted node, you can approve it to complete its bootstrappig process.
++
+[source,subs="{markup-in-source}"]
+.Sample Output
+----
+# *oc adm certificate approve csr-88jp8*
+
+certificatesigningrequest.certificates.k8s.io/csr-9rs74 approved
+----
+
+. Repeat these steps with the `CSR` for your other `worker` node.
+
+. Once the `worker` nodes have finished bootstrappig, they will ask to join the cluster as nodes. This will come as another set of `CSR` that you will need to approve. Repeat the previous steps to inspect and approve these `CSR`.
++
+[source,subs="{markup-in-source}"]
+.Sample Output
+----
+# *oc get csr*
+NAME        AGE     REQUESTOR                                                                   CONDITION
+csr-9rs74   5m13s   system:serviceaccount:openshift-machine-config-operator:node-bootstrapper   Approved,Issued
+csr-bsdkx   4m40s   system:serviceaccount:openshift-machine-config-operator:node-bootstrapper   Approved,Issued
+csr-dz4bb   38s     system:node:70aa-jggkw-worker-1                                             Pending
+csr-klw7h   22m     system:node:70aa-jggkw-master-0                                             Approved,Issued
+csr-m7w8s   23m     system:serviceaccount:openshift-machine-config-operator:node-bootstrapper   Approved,Issued
+csr-mfwm6   90s     system:node:70aa-jggkw-worker-0                                             Pending
+csr-q9k4n   22m     system:node:70aa-jggkw-master-1                                             Approved,Issued
+csr-s5xvw   22m     system:node:70aa-jggkw-master-2                                             Approved,Issued
+csr-v5j9c   22m     system:serviceaccount:openshift-machine-config-operator:node-bootstrapper   Approved,Issued
+csr-vzdq8   23m     system:serviceaccount:openshift-machine-config-operator:node-bootstrapper   Approved,Issued
+
+# *oc describe csr csr-mfwm6*
+
+Name:               csr-mfwm6
+Labels:             <none>
+Annotations:        <none>
+CreationTimestamp:  Thu, 14 Nov 2019 22:33:30 -0500
+Requesting User:    system:node:70aa-jggkw-worker-0
+Status:             Pending
+Subject:
+  Common Name:    system:node:70aa-jggkw-worker-0
+  Serial Number:
+  Organization:   system:nodes
+Subject Alternative Names:
+         DNS Names:     70aa-jggkw-worker-0
+         IP Addresses:  192.168.47.17
+Events:  <none>
+
+# *oc adm certificate approve csr-mfwm6*
+
+certificatesigningrequest.certificates.k8s.io/csr-mfwm6 approved
+----
+
+. Inspect your nodes to ensure that you now have a total of five in a `Ready` state. Three of them should be `master` and two of them should be `worker`.
++
+[source,subs="{markup-in-source}"]
+.Sample Output
+----
+# *oc get nodes*
+
+NAME                  STATUS   ROLES    AGE     VERSION
+70aa-jggkw-master-0   Ready    master   27m     v1.14.6+7e13ab9a7
+70aa-jggkw-master-1   Ready    master   27m     v1.14.6+7e13ab9a7
+70aa-jggkw-master-2   Ready    master   27m     v1.14.6+7e13ab9a7
+70aa-jggkw-worker-0   Ready    worker   6m11s   v1.14.6+7e13ab9a7
+70aa-jggkw-worker-1   Ready    worker   5m16s   v1.14.6+7e13ab9a7
+----
+
+You now have a fully functional cluster with worker nodes ready to run workloads. Proceed to the next section to finalize your installation.
+
+=== Finalize Installation
+
+Everything is installed! Take the time here to double check that your `clusterversion` is what you expect and all of your `clusteroperators` are fully deployed. You will also need to finish running the `openshift-install` program, which will print out some useful information on how to access your new cluster.
+
+. Verify that cluster is fully rolled out by checking the `clusterversion`.
++
+[source,subs="{markup-in-source}"]
+----
+# *oc get clusterversion*
+
+NAME      VERSION   AVAILABLE   PROGRESSING   SINCE   STATUS
+version   4.2.1     True        False         32m     Cluster version is 4.2.1
+----
++
+TIP: If you still see your `clusterversion` with a status of "Working towards...", it is because you just added your `worker` nodes and the remaining `clusteroperators` are being brought online. This should reconcile within a few minutes of your `worker` nodes being available.
+
+. Verify that all of your `clusteroperators` are running. None of them should be in a `PROGRESSING` or `DEGRADED` state.
++
+[source,subs="{markup-in-source}"]
+----
+# *oc get clusteroperators*
+
+NAME                                       VERSION   AVAILABLE   PROGRESSING   DEGRADED   SINCE
+authentication                             4.2.1     True        False         False      32m
+cloud-credential                           4.2.1     True        False         False      110m
+cluster-autoscaler                         4.2.1     True        False         False      106m
+console                                    4.2.1     True        False         False      34m
+dns                                        4.2.1     True        False         False      110m
+image-registry                             4.2.1     True        False         False      96m
+ingress                                    4.2.1     True        False         False      97m
+insights                                   4.2.1     True        False         False      110m
+kube-apiserver                             4.2.1     True        False         False      109m
+kube-controller-manager                    4.2.1     True        False         False      108m
+kube-scheduler                             4.2.1     True        False         False      108m
+machine-api                                4.2.1     True        False         False      110m
+machine-config                             4.2.1     True        False         False      110m
+marketplace                                4.2.1     True        False         False      106m
+monitoring                                 4.2.1     True        False         False      96m
+network                                    4.2.1     True        False         False      109m
+node-tuning                                4.2.1     True        False         False      106m
+openshift-apiserver                        4.2.1     True        False         False      107m
+openshift-controller-manager               4.2.1     True        False         False      108m
+openshift-samples                          4.2.1     True        False         False      106m
+operator-lifecycle-manager                 4.2.1     True        False         False      109m
+operator-lifecycle-manager-catalog         4.2.1     True        False         False      109m
+operator-lifecycle-manager-packageserver   4.2.1     True        False         False      107m
+service-ca                                 4.2.1     True        False         False      110m
+service-catalog-apiserver                  4.2.1     True        False         False      107m
+service-catalog-controller-manager         4.2.1     True        False         False      107m
+storage                                    4.2.1     True        False         False      107m
+----
+
+. Finally, finish off your `openshift-install`.
++
+[source,subs="{markup-in-source}"]
+----
+# *openshift-install wait-for install-complete --dir ~/openstack-upi*
+
+INFO Waiting up to 30m0s for the cluster at https://api.70aa.blue.osp.opentlc.com:6443 to initialize...
+INFO Waiting up to 10m0s for the openshift-console route to be created...
+INFO Install complete!
+INFO To access the cluster as the system:admin user when using 'oc', run 'export KUBECONFIG=/home/nstephan-redhat.com/openstack-upi/auth/kubeconfig'
+INFO Access the OpenShift web-console here: https://console-openshift-console.apps.70aa.blue.osp.opentlc.com
+INFO Login to the console with user: kubeadmin, password: nPPjY-UWFWt-x3EKn-PaFnw
+----
+
+Take note of the above information. It is how you will access your new cluster. You will need some of this for the next lab.
+
+Congratulations! You have fully deployed an OpenShift 4 cluster using the UPI method in a disconnected environment.
+
+== Cleanup
+
+Only do things here if you mess things up and need to get back to a good place.
+
+//TODO: write cleanup
+
+
+
+
+
+
+
