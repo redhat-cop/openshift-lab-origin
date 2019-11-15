@@ -1,4 +1,5 @@
 :labname: OpenShift UPI Disconnected Deployment
+:show_solution: true
 :markup-in-source: verbatim,attributes,quotes
 // Course Properties
 :course_name: Advanced Red Hat OpenShift Container Platform Deployment and Management
