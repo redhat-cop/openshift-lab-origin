@@ -1,0 +1,623 @@
+:ocp_release: 4.2
+:labname: OpenShift Migration - Cluster Configuration Migration
+
+include::tools/00_0_Lab_Header_Template.adoc[]
+
+== {labname} Lab
+
+.Overview
+
+This lab teaches the student to migrate OCP 3 Clusters to OCP 4 Clusters. Further labs teach application migration.
+
+NOTE: This lab is a *PILOT*.  It functions, but some details may be wrong.  Please send Pull Requests
+
+.Lab Infrastructure
+
+The lab infrastructure approximates the installation and operational context of a true migration.
+
+[cols=",",options="header",]
+|===
+|Product |Versions
+|OpenShift 3.x |v3.7+
+|OpenShift 4.x |v4.2+
+|===
+
+Additionally, temporary object storage will be required perform a migration. This will be provided through minio.  https://min.io/[Minio].
+
+.Base requirements
+
+* A computer with access to the Internet :-)
+* SSH client (for Microsoft Windows users https://www.putty.org/[Putty] is recommended)
+* Firefox 17 or higher, or Chromium / Chrome
+* An OpenTLC Account
+
+include::tools/00_0_Lab_Setup_Template.adoc[]
+
+[[labexercises]]
+
+:numbered:
+
+== Set Up and Verify Migration Tools
+
+=== Setup the Migration Tools on the OCP 3.11 cluster
+
+On OCP 3.11 the official Migration Operator is delivered via container image.  We will extract the files we need to install the operator from that image and run them to deploy the production operator.
+
+. Become root and log into the Red Hat Container Registry
++
+----
+$ sudo -i
+# yum -y install podman
+# podman login registry.redhat.io
+Username: <your RHN username>
+Password:
+Login Succeeded!
+----
+
+. Create the operator image and capture its ID
++
+----
+# image=$(podman create registry.redhat.io/rhcam-1-0/openshift-migration-rhel7-operator:v1.0)
+# echo $image
+----
+
+. Mount the image and capture the image name
++
+----
+# mnt=$(podman mount $image)
+----
+
+. Copy the two files you'll need out of the mount to your home directory:
++
+----
+# cp $mnt/controller-3.yml $mnt/operator.yml $HOME/
+----
+
+. Deploy the Operator
++
+----
+# oc create -f $HOME/operator.yml
+namespace/openshift-migration created
+rolebinding.rbac.authorization.k8s.io/system:deployers created
+serviceaccount/migration-operator created
+customresourcedefinition.apiextensions.k8s.io/migrationcontrollers.migration.openshift.io created
+role.rbac.authorization.k8s.io/migration-operator created
+rolebinding.rbac.authorization.k8s.io/migration-operator created
+clusterrolebinding.rbac.authorization.k8s.io/migration-operator created
+deployment.apps/migration-operator created
+Error from server (AlreadyExists): error when creating "./operator.yml": rolebindings.rbac.authorization.k8s.io "system:image-builders" already exists 
+Error from server (AlreadyExists): error when creating "./operator.yml": rolebindings.rbac.authorization.k8s.io "system:image-pullers" already exists 
+----
++
+NOTE: Ignore the rolebinding errors
+
+. Deployer the Controller
++
+----
+# oc create -f $HOME/controller-3.yml
+----
+
+=== Verify OCP 3.11 Migration Tools
+
+. Verify connection to the OpenShift master
++
+[source]
+----
+# oc whoami --show-server
+https://master1.8962.internal:443
+----
+
+. Verify that the `+migration-operator+` deployment is running in `+openshift-migration+` namespace and healthy
++
+[source]
+----
+# oc get deployment migration-operator -n openshift-migration
+NAME                 DESIRED   CURRENT   UP-TO-DATE   AVAILABLE   AGE
+migration-operator   1         1         1            1           2h
+----
+
+. Verify that `+velero+` is now running on the source in the `+openshift-migration+` namespace
++
+----
+# oc get pods -n openshift-migration | grep velero
+velero-6c95654dc8-cthkq              1/1       Running   0          2h
+----
+
+=== Setup the Migration Tools on the OCP 4.2 cluster
+
+You can install the CAM Operator on the OpenShift Container Platform 4 target cluster with OLM.
+
+The CAM Operator installs the Migration controller CR and the CAM web console on this cluster by default.
+
+. In another terminal, SSH into the 4.2 bastion host and log into the 4.2 OCP Cluster
++
+[source,bash]
+----
+$ ssh <OpenTLC User Name>@bastion.<GUID>.sandbox<SANDBOXID>.opentlc.com
+$ oc whoami --show-server
+https://api.cluster-d5d0.d5d0.sandbox452.opentlc.com:6443
+----
+
+. Get the OpenShift Console Route
++
+[source,bash]
+----
+$ oc get routes -n openshift-console
+console-openshift-console.cluster-GUID.GUID.sandboxNNN.opentlc.com
+----
+
+. Log in to the OCP 4.2 console with the above hostname in your browser.
+.. Accept the self-signed certs
+** Username: admin
+** Password: `+r3dh4t1!+`
+
+. Create a Namespace for the Operator.  In the OpenShift Container Platform web console, click *Administration → Namespaces*.
+.. On the Namespaces page, Click *Create Namespace*.
+.. Enter `openshift-migration` in the Name field and click *Create*.
+
+. Click *Operators → OperatorHub.*
+.. On the OperatorHub page, Scroll or type a keyword into the Filter by keyword field (in this case, `Migration`) to find the *Cluster Application Migration Operator*.
+.. Select the Cluster Application Migration Operator and *click Install*.
+
+. Create a Subscription: On the Create Operator Subscription page:
+.. Select the openshift-migration namespace if it is not already selected.
+.. Select an *Automatic or Manual approval strategy*.
+.. Click Subscribe.
+
+. Install the Operator: Click *Operators → Installed Operators*.
+.. The Cluster Application Migration Operator is listed in the openshift-migration project with the status InstallSucceeded.
+
+. Create the Migration Controller Custom Resource: On the *Installed Operators page*:
+.. Under Provided APIs, *click View 12 more…​*.
+.. Click *Create New → MigrationController*.
+.. Click *Create.*
+
+==== Connect to OCP 4.2 bastion and Verify 4.2 Migration Tools
+
+. In another terminal, SSH into the 4.2 bastion host and log into the 4.2 OCP Cluster
++
+[source,bash]
+----
+$ oc whoami --show-server
+https://api.cluster-d5d0.d5d0.sandbox452.opentlc.com:6443
+----
+
+. Verify that you see the below pods now running in `+openshift-migration+` namespace, we are looking for pods of `+controller-manager+`, `+velero+`, and `+migration-ui+`
++
+[source,bash]
+----
+$ oc get pods -n openshift-migration
+NAME                                    READY   STATUS    RESTARTS   AGE
+migration-controller-5db76c59dc-tmwm6   1/1     Running   0          66m
+migration-operator-7f84958c98-96v5k     2/2     Running   0          68m
+migration-ui-5bf474d9f9-s4n4z           1/1     Running   0          66m
+restic-dp6kv                            1/1     Running   0          68m
+restic-h2sfg                            1/1     Running   0          68m
+velero-6f97896c68-cvlfb                 1/1     Running   0          68m
+----
++
+[IMPORTANT]
+OCP3 will need access to the OCP4 migration UI. Use the next step to get the route of the migration-ui service for later use.
+
+. Get the route of the OCP4 migration-ui
++
+[source,bash]
+----
+$ oc get routes migration -n openshift-migration -o jsonpath='{.spec.host}'
+migration-openshift-migration.apps.cluster-0de0.0de0.sandbox335.opentlc.com
+----
+
+=== Configure Cross-Origin Resource Sharing (CORS)
+
+Our lab environment violates browser CORS security principles, and must be whitelisted.
+
+Cluster Application Migration’s (CAM's) UI is served out of the cluster behind its own route, there are 3 distinct origins at play:
+
+* The UI - (Ex: https://migration-openshift-migration.apps.examplecluster.com)
+* The OAuth Server - (Ex: https://openshift-authentication-openshift-authentication.apps.examplecluster.com)
+* The API Server - (Ex: https://api.examplecluster.com:6443)
+
+When the UI is served to the browser through its route, the browser recognizes its origin, and *blocks AJAX requests to alternative origins*. This is called https://developer.mozilla.org/en-US/docs/Web/HTTP/CORS[Cross-Origin Resource Sharing (CORS)], and it’s a deliberate browser security measure.
+
+The full description of CORS is linked above, but without configuring the non-UI origin servers, the requests will be blocked. To enable these requests, the UI’s origin should be whitelisted in a `+corsAllowedOrigins+` list for each alternative origin. The servers should recognize this list and inspect the origin of incoming requests.  If the origin matches one of the CORS whitelisted origins (the UI), there are a set of headers that are returned in the response that inform the browser the CORS request is accepted and valid.
+
+Additionally, for the same reasons described above, any requests that the UI may make to source 3.x clusters will also have to be whitelisted by configuring the same field in the 3.x cluster master-config.yaml.  This causes the 3.x API servers to accept the CORS requests incoming from the UI that was served out of its OCP4 cluster’s route.
+
+. From the OCP 3.11 bastion host, test access to the OCP4 migration API from OCP3. From the 3.11 host, curl the route from the OCP4 migration-ui
++
+[source,bash]
+----
+# curl -k https://migration-openshift-migration.apps.cluster-d5d0.d5d0.sandbox452.opentlc.com
+<!DOCTYPE html>
+<html lang="en-US">
+
+<head>
+  <meta charset="utf-8" />
+  <title>Cluster Application Migration Tool</title>
+  <meta id="appName" name="application-name" content="Mig UI" />
+  <!-- <link rel="icon" type="image/png" href="/assets/favicon.ico"> -->
+  <!-- <link rel="stylesheet" href="../node_modules/@patternfly/react-core/dist/styles/base.css" /> -->
+  <link rel="shortcut icon" href="public/favicon.ico?" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <script>
+    window._mig_meta = "eyJjbHVzdGVyQXBpIjogImh0dHBzOi8vYXBpLmNsdXN0ZXItanVkZC1taWc0YS5qdWRkLW1pZzRhLmV4YW1wbGUub3BlbnRsYy5jb206NjQ0MyIsICJjb25maWdOYW1lc3BhY2UiOiAib3BlbnNoaWZ0LWNvbmZpZyIsICJuYW1lc3BhY2UiOiAib3BlbnNoaWZ0LW1pZ3JhdGlvbiIsICJvYXV0aCI6IHsicmVkaXJlY3RVcmwiOiAiaHR0cHM6Ly9taWdyYXRpb24tb3BlbnNoaWZ0LW1pZ3JhdGlvbi5hcHBzLmNsdXN0ZXItanVkZC1taWc0YS5qdWRkLW1pZzRhLmV4YW1wbGUub3BlbnRsYy5jb20vbG9naW4vY2FsbGJhY2siLCAiY2xpZW50U2VjcmV0IjogIlpUZ3pNVFZsWmpjdE5qUXpaQzAxTWpCaUxXRTJaVFV0TURCbVpEWTFZakV5WVdJdyIsICJ1c2VyU2NvcGUiOiAidXNlcjpmdWxsIiwgImNsaWVudElkIjogIm1pZ3JhdGlvbiJ9fQ=="
+  </script>
+</head>
+
+<body>
+  <noscript>Enabling JavaScript is required to run this app.</noscript>
+  <div id="root"></div>
+  <script type="text/javascript" src="/app.bundle.js"></script>
+</body>
+
+</html>
+----
+
+=== Reconfigure the OCP3 Masters for CORS support managemnt-ui routes
+
+. Run the following playbook to enable the proper CORS headers on the source v3.11 cluster. Be sure to provide the GUID and DOMAIN for your 4.2 environment. The cors.yaml is in root home directory.
++
+----
+# ROUTE=<OCP4 Management UI Route>  ansible-playbook /root/cors.yaml
+----
+
+. For Example:
++
+[source]
+----
+# ROUTE=migration-openshift-migration.apps.cluster-d5d0.d5d0.sandbox452.opentlc.com ansible-playbook /root/cors.yaml
+
+PLAY [masters] **************************************************************************************************************************************************
+
+TASK [Gathering Facts] ******************************************************************************************************************************************
+ok: [master1.8962.internal]
+
+TASK [debug] ****************************************************************************************************************************************************
+ok: [master1.8962.internal] => {
+    "msg": "CORS Origin to add: - (?i)//migration-openshift-migration\\.apps\\.cluster-d5d0\\.d5d0\\.sandbox452\\.opentlc\\.com(:|/z)"
+}
+
+TASK [Adding new CORS rules] ************************************************************************************************************************************
+changed: [master1.8962.internal]
+
+TASK [Checking if atomic-openshift services exist] **************************************************************************************************************
+fatal: [master1.8962.internal]: FAILED! => {"changed": true, "cmd": "systemctl status atomic-openshift-master-api", "delta": "0:00:00.006524", "end": "2019-11-14 22:28:38.697999", "msg": "non-zero return code", "rc": 4, "start": "2019-11-14 22:28:38.691475", "stderr": "Unit atomic-openshift-master-api.service could not be found.", "stderr_lines": ["Unit atomic-openshift-master-api.service could not be found."], "stdout": "", "stdout_lines": []}
+...ignoring
+
+TASK [Applying new configuration [atomic-openshift services]] ***************************************************************************************************
+skipping: [master1.8962.internal] => (item=atomic-openshift-master-api)
+skipping: [master1.8962.internal] => (item=atomic-openshift-master-controllers)
+
+TASK [Applying new configuration [master-restart]] **************************************************************************************************************
+changed: [master1.8962.internal] => (item=api)
+changed: [master1.8962.internal] => (item=controller)
+
+PLAY RECAP ******************************************************************************************************************************************************
+master1.8962.internal      : ok=5    changed=3    unreachable=0    failed=0
+----
+
+=== Accept Certificates on Source and Destination Clusters
+
+Before you can login you will need to accept the certificates with your browser on both the source and destination cluster.
+
+. First get the route on the OCP 4.2 Cluster.  You may already have it from the steps above.
++
+.Example
+[source,bash]
+----
+$ oc get routes openshift-migration -n openshift-migration -o jsonpath='{.spec.host}'
+migration-openshift-migration.apps.cluster-0de0.0de0.sandbox335.opentlc.com
+----
++
+CAUTION: You will get a certificate errors.  This is expected, accept the unknown certificates.
++
+. Launch a browser and paste the migration-ui route
+
+
+
+
+. Click the link to take you to the Auth server and accept the certificate.
++
+.Example Link
+----
+https://api.cluster-0de0.0de0.sandbox335.opentlc.com:6443/.well-known/oauth-authorization-server
+----
++
+.Expected Output
+----
+{
+  "issuer": "https://oauth-openshift.apps.cluster-b37d.b37d.sandbox182.opentlc.com",
+  "authorization_endpoint": "https://oauth-openshift.apps.cluster-b37d.b37d.sandbox182.opentlc.com/oauth/authorize",
+  "token_endpoint": "https://oauth-openshift.apps.cluster-b37d.b37d.sandbox182.opentlc.com/oauth/token",
+  "scopes_supported": [
+    "user:check-access",
+    "user:full",
+    "user:info",
+    "user:list-projects",
+    "user:list-scoped-projects"
+  ],
+  "response_types_supported": [
+    "code",
+    "token"
+  ],
+  "grant_types_supported": [
+    "authorization_code",
+    "implicit"
+  ],
+  "code_challenge_methods_supported": [
+    "plain",
+    "S256"
+  ]
+}
+----
+
+. Browse back to the migration-ui route above.
+
+. Log in to the OCP 4.2 console
+** Username: admin
+** Password: `+r3dh4t1!+`
+
+. You will be redirected to the migration UI.
+
+. Go to the following link and accept the certificates: https://master1.$GUID.example.opentlc.com/.well-known/oauth-authorization-server
+
+==== Debugging CORS
+
+If you experience issues with the CAM webui accessing your OCP3 cluster, you can use https://github.com/fusor/mig-agnosticd/tree/master/cors#debugging-cors[this information^] to validate your configuration.
+
+.. CAM tool host’s OAuth and API server, for example, https://<migration ui route>/.well-known/oauth-authorization-server
+
+.. Source cluster’s Master Node's OAuth server, for example, https://master1.GUID.example.opentlc.com/.well-known/oauth-authorization-server
+
+.. Source cluster’s Master Node's API server, for example, https://master1.GUID.example.opentlc.com/api/v1/namespaces.
+
+
+=== Set Up Object Storage
+
+Cluster Application MIgratoin (CAM) leverages object storage as temporary scratch space when performing migrations. This storage can be any object storage that presents an `+S3 like+` interface. Currently, we have tested AWS S3, NooBaa, and Minio.
+
+For purposes of this lab, we have already deployed minio on the 4.2 cluster. Let’s proceed with creating a bucket for our use:
+
+. Get the route to the Minio web UI from the OCP 4.2 bastion host.
++
+[source,options="nowrap"]
+----
+$ oc get route -n gpte-minio
+NAME    HOST/PORT                                                        PATH   SERVICES   PORT   TERMINATION   WILDCARD
+minio   minio-gpte-minio.apps.cluster-0de0.0de0.sandbox335.opentlc.com          minio      9000                 None
+----
++
+image:../screenshots/lab2/minio_login.png[Minio Login Screen]
+
+. Visit the route and login to manually create a bucket; login with Access Key: `+minio+` and Secret Key: `+minio123+`. Any bucket name will suffice, we choose `+mybucket+`.
++
+image:../screenshots/lab2/minio-bucket-creation.png[Minio Bucket Creation]
++
+image:../screenshots/lab2/minio-mybucket.png[Minio mybucket]
+
+We now have a bucket created. We will use this during our migration exercises.
+
+== Using the Control Plane Migration Assistant (CPMA)
+
+Control Plane Migration Assistant (https://github.com/fusor/cpma[CPMA]) is a command line interface to help as much as possible users migrating an OpenShift 3.7+ control plane configuration to an OpenShift 4.x. The utility provides Custom Resource (CR) manifests and reports informing users which aspects of configuration can and cannot be migrated.
+
+=== Background
+
+Since there is no direct upgrade path from OCP 3 to OCP 4, the goal of CPMA is to ease the transition between the 2 OCP versions involved.
+
+OpenShift Container Platform (OCP) version 3 uses Ansible’s openshift-ansible modules to allow for extensive configuration.
+
+OCP 4 uses openshift-installer which integrates with supported clouds for deployment. `openshift-installer` is a Day-1 operation and relies on https://www.openshift.com/learn/topics/operators[Operators] to install and configure the cluster.
+
+Many of the installation options available during install time in OpenShift 3 are configurable by the user as Day-2 operations in OpenShift 4. In many cases this is done by writing CRs for operators which affect the configuration changes.
+
+=== Goals
+
+Bring the target Cluster to be as close as possible from the source cluster with the use of CR Manifests and report which configuration aspects can and cannot be migrated. The tool effectively provides confidence information about each processed options to explain what is supported, fully, partially or not. The generated CR Manifests can be applied to an OpenShift 4 cluster as Day-2 operations.
+
+=== Non-Goals
+
+Applying the CRs to the OpenShift 4 cluster directly is currently not an intended feature for this utility. The user must review the output CRs and filter the desired ones to be applied to a targeted OCP 4 cluster.  Migrating workloads are not to be done with CPMA, please use the appropriate migration tool for this purpose.
+
+=== Operation Overview
+
+The purpose of the CPMA tool is to assist an administrator to migrate the control plane of an OpenShift cluster from version 3.7+ to its next major OpenShift version 4.x. For that purpose CPMA sources information from:
+
+* Cluster Configuration files:
+** Master Node:
+Master configuration file:: Usually /etc/origin/master/master-config.yaml
+CRI-O configuration file:: Usually /etc/crio/crio.conf
+etcd configuration file:: Usually /etc/etcd/etcd.conf
+Image Registries file:: Usually /etc/containers/registries.conf
+** Dependent configuration files:
+- Password files
+- HTPasswd, etc.
+- ConfigMaps
+- Secrets
+- APIs
+- Kubernetes
+- Openshift
+
+Configuration files are processed to generate equivalent Custom Resource manifest files which can then to be consumed by OCP 4.x Operators.  During that process, every parameter that is analyzed is ported when compatible to its equivalent. A feature fully supported or not means there is a direct or not equivalent in OCP 4. A partially supported parameter indicates the feature is note entirely equivalent. The reason for the latter is because some features are deprecated or used differently in OCP 4. OCP 3 and 4 approach configuration management completely differently across. Therefore it’s expected the tool cannot port all features across.
+
+For more information about CPMA coverage please see https://github.com/fusor/cpma/tree/master/docs[docs].
+
+CPMA uses an ETL pattern to process the configuration files and query APIs which produce the output in two different forms: - Custom Resource Manifest files in YAML format - A report file (by default report.json) is produced by the reporting process
+
+The user can then review the new configuration from the generated manifests and must also use the reports as a guide how to leverage the CRs to apply configuration to a newly installed OpenShift 4 cluster. The reviewed configuration can then be used to update a targeted OpenShift cluster.
+
+Let’s go ahead a run CPMA against our source 3.11 cluster to generate a report. CPMA has already been installed on the bastion host.
+
+
+. From the OCP 3.11 bastion, let’s look at the help page for CPMA
++
+[source,bash]
+----
+# /root/cpma -h
+----
++
+.Sample Output
+[source,bash]
+----
+Helps migrate cluster configuration of a OCP 3.x cluster to OCP 4.x
+
+Usage:
+  cpma [flags]
+
+Flags:
+  -i, --allow-insecure-host        allow insecure ssh host key
+  -c, --cluster-name string        OCP3 cluster kubeconfig name
+      --config string              config file (Default searches ./cpma.yaml, $HOME/cpma.yml)
+      --config-source string       source for OCP3 config files, accepted values: remote or local
+      --crio-config string         path to crio config file
+  -d, --debug                      show debug ouput
+      --etcd-config string         path to etcd config file
+  -h, --help                       help for cpma
+  -n, --hostname string            OCP3 cluster hostname
+  -m, --manifests                  Generate manifests (default true)
+      --master-config string       path to master config file
+      --node-config string         path to node config file
+      --registries-config string   path to registries config file
+  -r, --reporting                  Generate reporting  (default true)
+  -k, --ssh-keyfile string         OCP3 ssh keyfile path
+  -l, --ssh-login string           OCP3 ssh login
+  -p, --ssh-port int16             OCP3 ssh port
+  -v, --verbose                    verbose output
+  -w, --work-dir string            set application data working directory (Default ".")
+----
+
+
+. Run CPMA and provide answers to the prompts, as follows:
++
+NOTE: If you make a mistake, the config file `cpma.yaml` will be in your /root/ directory.  Edit that to fix any errors and run the below again.
++
+[source,bash]
+----
+# /root/cpma --manifests=false
+----
++
+[NOTE]
+====
+* `cpma` will SSH to the `master1` host.  Provide the `ec2-user` username below, instead of root.
+* `cpma` will need your SSH key.  Indicate `/root/.ssh/GUIDkey.pem`  Replace the GUID with your OCP 3 GUID.
+====
++
+.Sample Output
+[source,subs="attributes"]
+----
+$ ./cpma --manifests=false
+? Do you wish to save configuration for future use? true
+? What will be the source for OCP3 config files? Remote host
+? Path to crio config file /etc/crio/crio.conf
+? Path to etcd config file /etc/etcd/etcd.conf
+? Path to master config file /etc/origin/master/master-config.yaml
+? Path to node config file /etc/origin/node/node-config.yaml
+? Path to registries config file /etc/containers/registries.conf
+? Do wish to find source cluster using KUBECONFIG or prompt it? KUBECONFIG
+? Select cluster obtained from KUBECONFIG contexts master1-GUID-internal
+? Select master node master1.db45.internal
+? SSH login *ec2-user*
+? SSH Port 22
+? Path to private SSH key /root/.ssh/GUIDkey.pem
+? Path to application data, skip to use current directory .
+INFO[29 Aug 19 00:07 UTC] Starting manifest and report generation
+INFO[29 Aug 19 00:07 UTC] Transform:Starting for - API
+INFO[29 Aug 19 00:07 UTC] APITransform::Extract
+INFO[29 Aug 19 00:07 UTC] APITransform::Transform:Reports
+INFO[29 Aug 19 00:07 UTC] Transform:Starting for - Cluster
+INFO[29 Aug 19 00:08 UTC] ClusterTransform::Transform:Reports
+INFO[29 Aug 19 00:08 UTC] ClusterReport::ReportQuotas
+INFO[29 Aug 19 00:08 UTC] ClusterReport::ReportPVs
+INFO[29 Aug 19 00:08 UTC] ClusterReport::ReportNamespaces
+INFO[29 Aug 19 00:08 UTC] ClusterReport::ReportNodes
+INFO[29 Aug 19 00:08 UTC] ClusterReport::ReportRBAC
+INFO[29 Aug 19 00:08 UTC] ClusterReport::ReportStorageClasses
+INFO[29 Aug 19 00:08 UTC] Transform:Starting for - Crio
+INFO[29 Aug 19 00:08 UTC] CrioTransform::Extract
+WARN[29 Aug 19 00:08 UTC] Skipping Crio: No configuration file available
+INFO[29 Aug 19 00:08 UTC] Transform:Starting for - Docker
+INFO[29 Aug 19 00:08 UTC] DockerTransform::Extract
+INFO[29 Aug 19 00:08 UTC] DockerTransform::Transform:Reports
+INFO[29 Aug 19 00:08 UTC] Transform:Starting for - ETCD
+INFO[29 Aug 19 00:08 UTC] ETCDTransform::Extract
+INFO[29 Aug 19 00:08 UTC] ETCDTransform::Transform:Reports
+INFO[29 Aug 19 00:08 UTC] Transform:Starting for - OAuth
+INFO[29 Aug 19 00:08 UTC] OAuthTransform::Extract
+INFO[29 Aug 19 00:08 UTC] OAuthTransform::Transform:Reports
+INFO[29 Aug 19 00:08 UTC] Transform:Starting for - SDN
+INFO[29 Aug 19 00:08 UTC] SDNTransform::Extract
+INFO[29 Aug 19 00:08 UTC] SDNTransform::Transform:Reports
+INFO[29 Aug 19 00:08 UTC] Transform:Starting for - Image
+INFO[29 Aug 19 00:08 UTC] ImageTransform::Extract
+INFO[29 Aug 19 00:08 UTC] ImageTransform::Transform:Reports
+INFO[29 Aug 19 00:08 UTC] Transform:Starting for - Project
+INFO[29 Aug 19 00:08 UTC] ProjectTransform::Extract
+INFO[29 Aug 19 00:08 UTC] ProjectTransform::Transform:Reports
+INFO[29 Aug 19 00:08 UTC] Flushing reports to disk
+INFO[29 Aug 19 00:08 UTC] Report:Added: report.json
+INFO[29 Aug 19 00:08 UTC] Report:Added: report.html
+INFO[29 Aug 19 00:08 UTC] Succesfully finished transformations
+----
+
+. Checking out our `/root/` directory we can see that cpma has created several files:
++
+[source,bash]
+----
+$ ls -l /root
+----
++
+.Sample Output
+[source]
+----
+total 2072
+-rw-------. 1 root root    7752 Mar 23  2018 anaconda-ks.cfg
+-rw-r--r--. 1 root root  645610 Nov 14 22:28 ansible.log
+-rw-r--r--. 1 root root    9104 Nov 14 23:20 cpma.log
+-rw-r--r--. 1 root root     538 Nov 14 23:20 cpma.yaml
+-rw-r--r--. 1 root root    9269 Nov 14 19:38 htpasswd.openshift
+drwxr-x---. 3 root root      17 Nov 14 23:20 master1.8962.internal/
+-rw-------. 1 root root    7080 Mar 23  2018 original-ks.cfg
+-rw-r--r--. 1 root root 1217925 Nov 14 23:20 report.html
+-rw-r-----. 1 root root  148355 Nov 14 23:20 report.json
+-rw-r--r--. 1 root root   54504 Nov 14 19:56 userpvs-ocp-workshop-8962.yml
+----
++
+[cols=",",options="header",]
+|===
+|File/Directory |Description
+|cpma.yaml |Config options we input during execution.
+|master1.$GUID.internal/ |Configuration files from master node
+|report.json |Raw json encoded report
+|report.html |Formatted version of report.json
+|===
+
+. Copy the reports to your OpenTLC-User `/home/<OpenTLC-Username>` directory so you can download the reports
++
+[source,bash]
+----
+# cp /root/report.* /home/<OpenTLC-Username>/
+# chmod a+r /home/<OpenTLC-Username>/report.*
+----
+
+. On your laptop, open a new console tab and scp the report files down to our local machine for viewing during the migration exercises.
++
+----
+$ mkdir /tmp/cpma
+$ scp <OpenTLC-Username>@bastion.<GUID>.<DOMAIN>:/home/<OpenTLC-Username>/report.* /tmp/cpma/
+----
+
+. Load Report for viewing
+
+.. Point your browser at `file:///tmp/cpma/report.html`
++
+This loads report for viewing.  The report is separated into a Cluster section and a Component section.  `+Keep this handy, as we will consult this report in subsequent labs+`.
++
+image:../screenshots/lab3/cpma-report-html.png[CPMA Report HTML]
+
+=== Congratulations
+
+You've finished setup.  Now let’s take a look at the Cluster Application Migration Tool (CAM).  Go onto the next Module. 
+
+https://raw.githubusercontent.com/redhat-cop/openshift-lab-origin/master/ocp4_migration/03_1_Application_Migration_Lab.adoc
+
+

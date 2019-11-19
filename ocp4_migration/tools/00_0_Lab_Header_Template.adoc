@@ -1,0 +1,22 @@
+// Course Properties
+:course_name: Red Hat OpenShift Container Platform Migration
+// OpenTLC Portal
+:opentlc_portal: link:https://labs.opentlc.com/[OPENTLC Lab Portal^]
+:opentlc_account_management: link:https://www.opentlc.com/account/[OPENTLC Account Management page^]
+
+// Catalog Items
+:opentlc_catalog_name1: OPENTLC OpenShift 4 Labs
+:opentlc_catalog_item_name1: OCP Migration Lab - OCP 3 Cluster
+
+:opentlc_catalog_name2: OPENTLC OpenShift 4 Labs
+:opentlc_catalog_item_name2: OCP Migration Lab - OCP 4 Cluster
+
+// Documentation
+:ocp_docs: link:https://docs.openshift.com/container-platform/4.2/welcome/index.html[OpenShift Container Platform Documentation]
+
+// Lab Document Setup
+:scrollbar:
+:data-uri:
+:imagesdir: images
+:toc2:
+:linkattrs:

@@ -1,0 +1,219 @@
+:numbered:
+== Provision Lab Environment
+
+=== Introduction
+
+[NOTE]
+If you previously set up an environment for this class, you can skip this section and go directly to the <<labexercises>> section.
+
+[NOTE]
+*TWO ENVIRONMENTS*: For the OpenShift Migration Lab you need to deploy TWO clusters for the course - an OCP3 and an OCP4.
+
+In this section you provision the lab environment that provides access to all of the components required to perform the lab guide instructions. The lab environment is cloud-based. You can access it over the Internet from anywhere. Do not expect performance to match a dedicated environment.
+
+=== Deploying the Environment
+
+. Go to the {opentlc_portal} and use your OPENTLC credentials to log in.
++
+[TIP]
+If you do not remember your password, go to the {opentlc_account_management} to reset your password.
+
+. Deploying *OCP 3* Cluster
+.. Navigate to *Services -> Catalogs -> All Services -> {opentlc_catalog_name1}*.
+.. On the left, select *{opentlc_catalog_item_name1}*.
+.. On the right, click *Order*.
+.. If the interface offers it to you, and you are not in North America, click *Lab Parameters* and select your appropriate region.
+.. On the bottom right, click *Submit*.
+
+. Deploying *OCP 4* Cluster
+.. Navigate to *Services -> Catalogs -> All Services -> {opentlc_catalog_name1}*.
+.. On the left, select *{opentlc_catalog_item_name2}*.
+.. On the right, click *Order*.
+.. *Click* the *Check Box* affirming that you understand and know your runtime and expiration dates.
+.. If the interface offers it to you, and you are not in North America, click *Lab Parameters* and select your appropriate region.
+.. On the bottom right, click *Submit*.
++
+[WARNING]
+*Do not* select App Control -> Start after ordering the labs. Ordering the labs automatically begin the build process. Selecting *Start* may corrupt the lab environments or cause other complications.
+
+=== Awaiting Your Environments and Gathering Connection Instructions via Email
+
+After a few minutes, expect to receive emails with instructions on how to connect each of the environments. You will receive three e-mails for each of the clusters, totalling *SIX* emails:
+
+==== *OCP 3* Emails and Connection Information
+
+The OCP3 Cluster will send you emails very similar to these.  The last one will have your authentication information.
+
+.Email 1: Provisioning Started
+****
+Provisioning has started on your OTLC-<OpenTLC User Name>-PROD_OCP_MIGRATION-<GUID> environment.
+
+You will receive more information via email during the build process within the next 30 minutes.
+****
+
+.Email 2: Provisioning Has Updated
+****
+Provisioning is continuing for Red Hat OPENTLC service OTLC-<OpenTLC User Name>-PROD_OCP_MIGRATION-<GUID>.
+
+You will receive another email when the environment is available within the next 75 minutes.
+****
+
+.Email 3: Provisioning Completed
+****
+Your environment for OTLC-XXX-<OpenTLC User Name>-PROD_OCP_MIGRATION-<GUID>_COMPLETED has been provisioned.
+Your unique identifier, GUID, is: *<GUID>*
+
+*Access to the environment will be granted as soon as the environment deployment is complete.*
+
+Please refer to the instructions for next steps and how to access your environment.
+
+*Troubleshooting and Access issues:*
+
+Always refer to the instructions to understand how to properly access and navigate your environment. If you need help using the SSH client on your computer you can consult http://www.opentlc.com/ssh.html.
+
+NOTICE: Your environment will expire and be deleted in *7 day(s) at 2019-11-19 00:00:00 -0500 and will be idled down after 8 hour(s).*
+
+In order to conserve resources, we cannot archive or restore any data in this environment. All data will be lost upon expiration.
+
+---
+----
+Here is some important information about your environment:
+
+Openshift Master Console: https://master.GUID.example.opentlc.com/console
+
+SSH Access: ssh <OPENTLC-Username>@bastion.GUID.example.opentlc.com
+SSH password: r3dh4t1!
+----
+****
+
+==== *OCP 4* Emails and Connection Information
+
+.Email 1: Provisioning started
+****
+Provisioning has started on your Red Hat OPENTLC OTLC-LAB-<OpenTLC User Name>-PROD_OCP4_MIGRATION-<GUID> environment.
+
+You will receive more information via email during the build process within the next 30 minutes.
+****
+
+.Email 2:Provisioning has updated (this means that the VMs have been requested successfully)
+****
+Provisioning is continuing for Red Hat OPENTLC service OTLC-LAB-<OpenTLC User Name>-PROD_OCP_MIGRATION-<GUID>.
+You will receive another email when the environment is available within the next 30 minutes.
+****
+
+.Email 3: Provisioning Completed
+****
+Your environment for OTLC-LAB-<OpenTLC User Name>-PROD_OCP4_MIGRATION-<GUID>>_COMPLETED has been provisioned.
+Your unique identifier, GUID, is: *<GUID>*
+
+*Access to the environment will be granted as soon as the environment deployment is complete.*
+
+Please refer to your demo instructions for next steps and how to access your environment.
+
+*Troubleshooting and Access issues:*
+
+Always refer to your lab instructions to understand how to properly access and navigate your environment. If you need help using the SSH client on your computer you can consult http://www.opentlc.com/ssh.html.
+
+NOTICE: Your environment will expire and be deleted in *7 day(s) at 2019-03-27 00:00:00 -0400 and will be idled down after 8 hour(s).*
+
+In order to conserve resources, we cannot archive or restore any data in this environment. All data will be lost upon expiration.
+
+---
+
+----
+Here is some important information about your environment:
+
+Openshift Master Console: http://console-openshift-console.apps.cluster-GUID.GUID.sandboxNNN.opentlc.com
+Openshift API for command line 'oc' client: https://api.cluster-GUID.GUID.sandboxNNN.opentlc.com:6443
+Download oc client from https://mirror.openshift.com/pub/openshift-v4/clients/ocp/4.2.2/openshift-client-linux-4.2.2.tar.gz
+This cluster has authentication enabled. You can use 'admin' with password 'r3dh4t1!' to access your cluster
+
+SSH Access: ssh <OpenTLC User Name>@bastion.GUID.sandboxNNN.opentlc.com
+SSH password: <Your Password>
+
+Post Flight Check
+DNS Web Console ............... OK
+DNS API ....................... OK
+Web console ................... OK
+API ........................... OK
+Create Project with PV ........ OK
+App deployed .................. OK
+Route ......................... OK
+
+----
+****
+
+* Notes on the OCP 4 Cluster
+. Wait until you receive the final e-mail before trying to connect to your environment.
+. Note the GUID (a 4 character ID) of your environment.
+. Note the Top Level domain (`sandbox999.opentlc.com` in the example above)
+. Note the command to SSH into your bastion.
+. Note the AWS Access credentials provided for the duration of this lab.
+. Finally note the SSH password for your user id. *This password is different from your regular OpenTLC password!*
+
+[CAUTION]
+====
+If you receive an email stating that your cluster has failed to deploy, please do the following:
+
+. Notify your instructor with the GUID of the failed cluster.
+. Follow your instructor's steps to order a new cluster.
+.. The instructor may provision a new cluster for you.
+====
+
+=== Start Environments After Shut Down
+
+To conserve resources, the lab environment shuts down automatically after eight hours. In this section, you restart the lab environment for this course after it has shut down automatically.
+
+. Go to the {opentlc_portal} and use your OPENTLC credentials to log in.
+. Navigate to *Services -> My Services* (this should be the screen shown right after logging in).
+. In the list of your services, select your lab environment.
+. Select *App Control -> Start* to start your lab environment.
+. Select *Yes* at the *Are you sure?* prompt.
+. On the bottom right, click *Submit*.
+
+After a few minutes, expect to receive an email letting you know that the lab environment has been started.
+
+=== Test Server Connections
+
+The `bastion` administration host serves as an access point into the environments and is not part of the OpenShift environment.
+
+. Connect to each of your administration hosts and make sure you can access each of your provisioned hosts:
+
+* *OCP 3*
++
+[source]
+----
+ssh <OpenTLC User Name>@bastion.<GUID>.example.opentlc.com
+----
++
+.. Validate that the GUID variable is set correctly for your environment:
++
+[source,sh]
+----
+echo $GUID
+----
++
+.Sample Output
+[source,texinfo]
+----
+c3po
+----
++
+* *OCP 4*
++
+----
+ssh <OpenTLC User Name>@bastion.<GUID>.sandbox<SANDBOXID>.opentlc.com
+----
++
+.. Validate that the GUID variable is set correctly for your environment:
++
+[source,sh]
+----
+echo $GUID
+----
++
+.Sample Output
+[source,texinfo]
+----
+c3po
+----

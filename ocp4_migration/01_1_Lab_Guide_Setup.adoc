@@ -1,0 +1,16 @@
+:ocp_release: 4.2
+:labname: OpenShift Migration - Lab Guide Setup
+
+== Reading These Labs on GitHub
+
+. Install the asciidoc browser extension for your brower
+.. chrome: https://chrome.google.com/webstore/detail/asciidoctorjs-live-previe/iaalpfgpbocpdfblpnhhgllgbdbchmia?hl=en
+.. firefox: https://addons.mozilla.org/en-US/firefox/addon/asciidoctorjs-live-preview/
+. on GitHub, view the file and click *Raw*
+
+. You can make make edits to the files by clicking the pencil icon.  Please do.
+.  Submit them as Pull Requests and I'll review and incorporate ASAP.
+
+Go onto the first part of the lab:
+
+https://raw.githubusercontent.com/redhat-cop/openshift-lab-origin/master/ocp4_migration/02_1_OCP_Migration_Lab.adoc

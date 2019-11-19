@@ -1,0 +1,618 @@
+:labname: OpenShift Migration - Debugging and Scale
+
+include::tools/00_0_Lab_Header_Template.adoc[]
+
+== {labname} Lab
+
+.Overview
+
+This lab teaches the student to debug failed migration and plan scaling large migrations for workloads deployed on OCP 3 to OCP 4 Clusters.
+
+NOTE: This lab is a *PILOT*.  It functions, but some details may be wrong.  Please send Pull Requests
+
+
+.Lab Infrastructure
+
+This lab requires the infrastructure deployed in the prior labs, OpenShift Cluster Migration and OpenShfit Application Migration.  You must complete that lab first to complete this lab.
+
+[[labexercises]]
+
+== Debugging Failed Migrations
+
+Most of the time migrations go as planned, but knowing what to do when they don’t is critical. This lab attempts to provide you with a process/guide to follow when investigating a failed migration.
+
+image:../screenshots/lab7/mig-plan-failed.png[Failed Migration]
+
+=== CRD Architecture
+
+image:../screenshots/lab7/mig-custom-resources.png[Failed Migration]
+
+It’s important to first understand the custom resources in play. The above architecture diagram illustrates the migration resources and their relationships. Most of our debugging failed migration executions will focus on the right-side of the diagram: 
+
+* MigMigration
+* Velero - Backup and Restore
+
+=== Workflow
+
+Upon execution of a Migration Plan (stage or migrate), a `+MigMigration+` is created. This custom resource is created for each distinct run; and is created on the same cluster where the migration-controller that is orchestrating the migration is running.
+
+. Let’s take a look at the existing MigMigrations. On our 4.2 cluster, perform the following:
++
+[source,bash]
+----
+oc get migmigration -n openshift-migration
+NAME                                   AGE
+88435fe0-c9f8-11e9-85e6-5d593ce65e10   6m42s
+----
+
+. Once you found the appropriate migration execution that you want to investigate, you can request more detail:
++
+[source,bash]
+----
+$ oc describe migmigration 88435fe0-c9f8-11e9-85e6-5d593ce65e10 -n openshift-migration
+Name:         88435fe0-c9f8-11e9-85e6-5d593ce65e10
+Namespace:    openshift-migration
+Labels:       <none>
+Annotations:  touch: 3b48b543-b53e-4e44-9d34-33563f0f8147
+API Version:  openshift-migration.openshift.io/v1alpha1
+Kind:         MigMigration
+Metadata:
+  Creation Timestamp:  2019-08-29T01:01:29Z
+  Generation:          20
+  Resource Version:    88179
+  Self Link:           /apis/migration.openshift.io/v1alpha1/namespaces/mig/migmigrations/88435fe0-c9f8-11e9-85e6-5d593ce65e10
+  UID:                 8886de4c-c9f8-11e9-95ad-0205fe66cbb6
+Spec:
+  Mig Plan Ref:
+    Name:        socks-shop-mig-plan
+    Namespace:   openshift-migration
+  Quiesce Pods:  true
+  Stage:         false
+Status:
+  Conditions:
+    Category:              Advisory
+    Durable:               true
+    Last Transition Time:  2019-08-29T01:03:40Z
+    Message:               The migration has completed successfully.
+    Reason:                Completed
+    Status:                True
+    Type:                  Succeeded
+  Phase:                   Completed
+  Start Timestamp:         2019-08-29T01:01:29Z
+Events:                    <none>
+----
+
+This `+MigMigration+` describes a successful execution of the socks-shop-mig-plan.
+
+The migration-controller will orchestrate actions on both the source and target clusters. These actions are as follows:
+
+==== Source Cluster
+
+Two Velero Backup CRs are created:
+
+. `+Backup #1+`:
+.. Do an initial backup of k8s resources via Velero (no PV data).
+.. Annotate all pods with PVs to track what we want to backup.
+
+. `+Backup #2+`:
+.. If quiesce is selected, scale app down to zero:
+* Scales down to zero, Deployment, DeploymentConfig, Job, Statefulset, etc…..all but pods. +
+* Standalone pods are left alone, hope is there are minimal of these and most people will use Deployment/ReplicaSets so we can scale to zero. +
+* If they had a standalone pod the user is responsible for manual quiesce as they need.
+
+. Launch 'stage' pods, these are used for both stage and migrate, they are a dummy/sleeper pod that just sleeps and mounts the data so we can backup.
+. Do a backup of 'PV' data via Velero.
+
+NOTE: Velero will sync these Backup CRs between source and target clusters, so they will appear on both clusters.
+
+==== Target Cluster
+
+Two Velero Restore CRs are created:
+
+`+Restore #1+`:
+
+. (Uses Backup #2) – Restore just the PV data to destination cluster.
+. Do a restore of 'PV data', this would be a restore of 'Backup #2' above
+
+`+Restore #2+`:
+
+. (Uses Backup #1) – Restore the k8s resources to the destination cluster.
+
+=== Examining Velero Custom Resources
+
+Let’s take a look at these Velero CRs on our 4.2 Cluster:
+
+==== Backup
+
+The Velero CRs will contain references to the associated MigMigration.  We can use the UID of the MigMigration, under Metadata, to query the relevant objects:
+
+[source,bash]
+----
+$ oc get backup -n openshift-migration -l migmigration=8886de4c-c9f8-11e9-95ad-0205fe66cbb6
+NAME                                         AGE
+88435fe0-c9f8-11e9-85e6-5d593ce65e10-59gb7   36m  //Backup 2
+88435fe0-c9f8-11e9-85e6-5d593ce65e10-vdjb7   37m  //Backup 1
+----
+
+[source,bash]
+----
+$ oc get backup 88435fe0-c9f8-11e9-85e6-5d593ce65e10-59gb7  -n openshift-migration -o yaml
+apiVersion: velero.io/v1
+kind: Backup
+metadata:
+  annotations:
+    openshift.io/migrate-copy-phase: final
+    openshift.io/migrate-quiesce-pods: "true"
+    openshift.io/migration-registry: 172.30.105.179:5000
+    openshift.io/migration-registry-dir: /socks-shop-mig-plan-registry-44dd3bd5-c9f8-11e9-95ad-0205fe66cbb6
+  creationTimestamp: "2019-08-29T01:03:15Z"
+  generateName: 88435fe0-c9f8-11e9-85e6-5d593ce65e10-
+  generation: 1
+  labels:
+    app.kubernetes.io/part-of: openshift-migration
+    migmigration: 8886de4c-c9f8-11e9-95ad-0205fe66cbb6
+    migration-stage-backup: 8886de4c-c9f8-11e9-95ad-0205fe66cbb6
+    velero.io/storage-location: myrepo-vpzq9
+  name: 88435fe0-c9f8-11e9-85e6-5d593ce65e10-59gb7
+  namespace: openshift-migration
+  resourceVersion: "87313"
+  selfLink: /apis/velero.io/v1/namespaces/mig/backups/88435fe0-c9f8-11e9-85e6-5d593ce65e10-59gb7
+  uid: c80dbbc0-c9f8-11e9-95ad-0205fe66cbb6
+spec:
+  excludedNamespaces: []
+  excludedResources: []
+  hooks:
+    resources: []
+  includeClusterResources: null
+  includedNamespaces:
+  - sock-shop
+  includedResources:
+  - persistentvolumes
+  - persistentvolumeclaims
+  - namespaces
+  - imagestreams
+  - imagestreamtags
+  - secrets
+  - configmaps
+  - pods
+  labelSelector:
+    matchLabels:
+      migration-included-stage-backup: 8886de4c-c9f8-11e9-95ad-0205fe66cbb6
+  storageLocation: myrepo-vpzq9
+  ttl: 720h0m0s
+  volumeSnapshotLocations:
+  - myrepo-wv6fx
+status:
+  completionTimestamp: "2019-08-29T01:02:36Z"
+  errors: 0
+  expiration: "2019-09-28T01:02:35Z"
+  phase: Completed
+  startTimestamp: "2019-08-29T01:02:35Z"
+  validationErrors: null
+  version: 1
+  volumeSnapshotsAttempted: 0
+  volumeSnapshotsCompleted: 0
+  warnings: 0
+----
+
+==== Restore
+
+[source,bash]
+----
+oc get restore -n openshift-migration -l migmigration=8886de4c-c9f8-11e9-95ad-0205fe66cbb6
+NAME                                         AGE
+e13a1b60-c927-11e9-9555-d129df7f3b96-gb8nx   15m //Restore 2
+e13a1b60-c927-11e9-9555-d129df7f3b96-qnqdt   15m //Restore 1
+----
+
+[source,bash]
+----
+oc get restore e13a1b60-c927-11e9-9555-d129df7f3b96-gb8nx  -n openshift-migration -o yaml
+apiVersion: velero.io/v1
+kind: Restore
+metadata:
+  annotations:
+    openshift.io/migrate-copy-phase: final
+    openshift.io/migrate-quiesce-pods: "true"
+    openshift.io/migration-registry: 172.30.90.187:5000
+    openshift.io/migration-registry-dir: /socks-shop-mig-plan-registry-36f54ca7-c925-11e9-825a-06fa9fb68c88
+  creationTimestamp: "2019-08-28T00:09:49Z"
+  generateName: e13a1b60-c927-11e9-9555-d129df7f3b96-
+  generation: 3
+  labels:
+    app.kubernetes.io/part-of: openshift-migration
+    migmigration: e18252c9-c927-11e9-825a-06fa9fb68c88
+    migration-final-restore: e18252c9-c927-11e9-825a-06fa9fb68c88
+  name: e13a1b60-c927-11e9-9555-d129df7f3b96-gb8nx
+  namespace: openshift-migration
+  resourceVersion: "82329"
+  selfLink: /apis/velero.io/v1/namespaces/mig/restores/e13a1b60-c927-11e9-9555-d129df7f3b96-gb8nx
+  uid: 26983ec0-c928-11e9-825a-06fa9fb68c88
+spec:
+  backupName: e13a1b60-c927-11e9-9555-d129df7f3b96-sz24f
+  excludedNamespaces: null
+  excludedResources:
+  - nodes
+  - events
+  - events.events.k8s.io
+  - backups.velero.io
+  - restores.velero.io
+  - resticrepositories.velero.io
+  includedNamespaces: null
+  includedResources: null
+  namespaceMapping: null
+  restorePVs: true
+status:
+  errors: 0
+  failureReason: ""
+  phase: Completed
+  validationErrors: null
+  warnings: 15
+----
+
+=== Controller Logs
+
+Another area we can examine to assist in debugging migration issues is the controller logs.
+
+Do all these commands from your OCP4.2 host
+
+==== Migration Controller Logs
+
+[source,bash]
+----
+oc get pods -n openshift-migration | grep controller
+migration-controller-584db8867-fkfx8   1/1     Running   0          10h
+----
+
+[source,bash]
+----
+oc logs migration-controller-584db8867-fkfx8 -f -n openshift-migration
+----
+
+==== Velero Controller Logs
+
+[source,bash]
+----
+$ oc get pods -n openshift-migration | grep velero
+velero-7659c69dd7-ctb5x                       1/1     Running     0          4h46m
+----
+
+[source,bash]
+----
+oc logs velero-7659c69dd7-ctb5x -f -n openshift-migration
+----
+
+==== Restic Controller Logs
+
+[source,bash]
+----
+$ oc get pods -n openshift-migration | grep restic
+restic-t4f9b                                  1/1     Running     0          4h47m
+----
+
+[source,bash]
+----
+oc logs restic-t4f9b -f -n openshift-migration
+----
+
+Next, we’ve added an optional lab covering multi-namespace migrations and using the API directly for large scale operations.
+
+== Migration at Scale via API
+
+In this section, we will be looking at migrating multiple namespaces in a single Migration Plan. In these types of large scale migrations, sometimes using the WebUI can be less than ideal. With that, we are also going to use the API directly for creating and executing our migration.
+
+=== Setup
+
+Let’s start by seeding our 3.11 cluster with a set of sample stateless applications. We’ve added a set of scripts to make this simple. These scripts are already available on the 3.11 bastion host for convenience.
+
+==== Deploy HelloOpenShift Apps
+
+. The `+deploy.sh+` script will deploy the HelloOpenShift application to a user specified number of namespaces. For our purposes, let’s choose 5.  Execute it on the OCP 3.11 cluster.
++
+[source,bash]
+----
+# /root/lab8/deploy.sh
+Number of namespaces?
+5
+namespace/hello-openshift-1 created
+pod/hello-openshift created
+service/hello-openshift exposed
+route.route.openshift.io/hello-openshift exposed
+namespace/hello-openshift-2 created
+pod/hello-openshift created
+service/hello-openshift exposed
+route.route.openshift.io/hello-openshift exposed
+namespace/hello-openshift-3 created
+pod/hello-openshift created
+service/hello-openshift exposed
+route.route.openshift.io/hello-openshift exposed
+namespace/hello-openshift-4 created
+pod/hello-openshift created
+service/hello-openshift exposed
+route.route.openshift.io/hello-openshift exposed
+namespace/hello-openshift-5 created
+pod/hello-openshift created
+service/hello-openshift exposed
+route.route.openshift.io/hello-openshift exposed
+Finding routes...
+hello-openshift-hello-openshift-1.apps.db45.events.opentlc.com
+hello-openshift-hello-openshift-2.apps.db45.events.opentlc.com
+hello-openshift-hello-openshift-3.apps.db45.events.opentlc.com
+hello-openshift-hello-openshift-4.apps.db45.events.opentlc.com
+hello-openshift-hello-openshift-5.apps.db45.events.opentlc.com
+----
+
+==== Validate applications
+
+. We’ve also included a `+probe.sh+` script that will verify that all deployed applications are responding.
++
+[source,bash]
+----
+# /root/lab8/probe.sh
+Probing app in namespace hello-openshift-1
+Hello OpenShift!
+Probing app in namespace hello-openshift-2
+Hello OpenShift!
+Probing app in namespace hello-openshift-3
+Hello OpenShift!
+Probing app in namespace hello-openshift-4
+Hello OpenShift!
+Probing app in namespace hello-openshift-5
+Hello OpenShift!
+----
+
+NOTE: If you get HTML output errors, try running probe.sh again.  The pod was delayed coming up.
+
+Great! We are now ready to assemble our Migration Plan.
+
+=== Create Migration Plan
+
+On your OCP 4.2 cluster, since we’ve already performed successful migrations throughout the preceding labs, we already have our MigCluster, Cluster, & MigStorage resources created. This means we are ready to assemble our MigPlan.
+
+. In the below yaml, we’ve seeded with the created resources. Copy the below as a starting point into your favorite editor:
++
+[source,yaml]
+----
+apiVersion: migration.openshift.io/v1alpha1
+kind: MigPlan
+metadata:
+  labels:
+    controller-tools.k8s.io: "1.0"
+  name: multi-namespace-migplan
+  namespace:  openshift-migration
+spec:
+
+  srcMigClusterRef:
+    name: ocp3
+    namespace: openshift-migration
+
+  destMigClusterRef:
+    name: host
+    namespace: openshift-migration
+
+  migStorageRef:
+    name: myrepo
+    namespace: openshift-migration
+
+  # [!] Change namespaces to adjust which OpenShift namespaces should be migrated from source to destination cluster 
+
+  namespaces:
+    - hello-openshift-1
+    - hello-openshift-2
+    - hello-openshift-3
+    - hello-openshift-4
+    - hello-openshift-5
+----
+
+. Save the file as `+mig-plan.yaml+`
++
+[source,bash]
+----
+# Creates MigPlan 'multi-namespace-migplan' in namespace 'openshift-migration'
+$ oc apply -f mig-plan.yaml
+migplan.migration.openshift.io/multi-namespace-migplan created
+----
+
+. List all the migplans:
++
+[source,bash]
+----
+$ oc get migplan -n openshift-migration
+NAME                      AGE
+mssql-mig-plan            10h
+multi-namespace-migplan   78s
+sock-shop-mig-plan        10h
+----
+
+. Let’s Describe our MigPlan. Assuming the controller is running, validations should have run against the plan, and you should be able to see a status of *'The migration plan is ready.'* or a list of issues to resolve.
++
+----
+$ oc describe migplan multi-namespace-migplan  -n openshift-migration
+Name:         multi-namespace-migplan
+Namespace:    openshift-migration
+Labels:       controller-tools.k8s.io=1.0
+Annotations:  kubectl.kubernetes.io/last-applied-configuration:
+                {"apiVersion":"migration.openshift.io/v1alpha1","kind":"MigPlan","metadata":{"annotations":{},"labels":{"controller-tools.k8s.io":"1.0"},"...
+              touch: f35ded3d-d47a-496c-941d-47f5e34367fa
+API Version:  migration.openshift.io/v1alpha1
+Kind:         MigPlan
+Metadata:
+  Creation Timestamp:  2019-11-19T10:53:42Z
+  Generation:          2
+  Resource Version:    175959
+  Self Link:           /apis/migration.openshift.io/v1alpha1/namespaces/openshift-migration/migplans/multi-namespace-migplan
+  UID:                 da23b217-0aba-11ea-ba28-023d7c4f9b9b
+Spec:
+  Dest Mig Cluster Ref:
+    Name:       host
+    Namespace:  openshift-migration
+  Mig Storage Ref:
+    Name:       myrepo
+    Namespace:  openshift-migration
+  Namespaces:
+    hello-openshift-1
+    hello-openshift-2
+    hello-openshift-3
+    hello-openshift-4
+    hello-openshift-5
+  Src Mig Cluster Ref:
+    Name:       ocp3
+    Namespace:  openshift-migration
+Status:
+  Conditions:
+    Category:              Required
+    Last Transition Time:  2019-11-19T10:53:47Z
+    Message:               The `persistentVolumes` list has been updated with discovered PVs.
+    Reason:                Done
+    Status:                True
+    Type:                  PvsDiscovered
+    Category:              Required
+    Last Transition Time:  2019-11-19T10:53:49Z
+    Message:               The storage resources have been created.
+    Status:                True
+    Type:                  StorageEnsured
+    Category:              Required
+    Last Transition Time:  2019-11-19T10:53:53Z
+    Message:               The migration registry resources have been created.
+    Status:                True
+    Type:                  RegistriesEnsured
+    Category:              Required
+    Last Transition Time:  2019-11-19T10:53:53Z
+    Message:               The migration plan is ready.
+    Status:                True
+    Type:                  Ready
+Events:                    <none>
+----
+
+=== Execute Migration
+
+. Let’s now proceed with creating a `+MigMigration+` that will execute our Migration Plan. Again, in the below yaml, we’ve seeded with the created resources. Copy the below as a starting point into your favorite editor:
++
+[source,yaml]
+----
+apiVersion: migration.openshift.io/v1alpha1
+kind: MigMigration
+metadata:
+  labels:
+    controller-tools.k8s.io: "1.0"
+  name: migmigration-multi-namespace
+  namespace: openshift-migration
+spec:
+  # [!] Set 'stage: true' to run a 'Stage Migration' and skip quiescing of Pods on the source cluster.
+  stage: false
+  # [!] Set 'quiescePods: true' to scale down Pods on the source cluster after the 'Backup' stage of a migration has finished
+  quiescePods: false
+
+  migPlanRef:
+    name: multi-namespace-migplan
+    namespace: openshift-migration
+----
+
+. Set the appropriate values for `+stage+` and `+quiescePods+`. In this case, false and true respectively. Save the file as `+mig-migration.yaml+`.
++
+[source,bash]
+----
+# Creates MigMigration 'migmigration-multi-namespace' in namespace 'openshift-migration'
+$ oc apply -f mig-migration.yaml
+migmigration.migration.openshift.io/migmigration-multi-namespace created
+----
+
+. Monitor progress of the migration with `+oc describe+`. You should see a status of *'The migration is ready.'*, otherwise you’ll see an error condition within `+oc describe+` output indicating what action you need to take before the migration can begin.
++
+[source,bash]
+----
+# oc describe migmigrations.migration.openshift.io -n openshift-migration migmigration-multi-namespace
+Name:         migmigration-multi-namespace
+Namespace:    openshift-migration
+Labels:       controller-tools.k8s.io=1.0
+Annotations:  kubectl.kubernetes.io/last-applied-configuration:
+                {"apiVersion":"migration.openshift.io/v1alpha1","kind":"MigMigration","metadata":{"annotations":{},"labels":{"controller-tools.k8s.io":"1....
+              touch: 65253f15-4f0c-471f-8bb6-f8ccb036eccc
+API Version:  migration.openshift.io/v1alpha1
+Kind:         MigMigration
+Metadata:
+  Creation Timestamp:  2019-11-19T11:00:17Z
+  Generation:          11
+  Owner References:
+    API Version:     migration.openshift.io/v1alpha1
+    Kind:            MigPlan
+    Name:            multi-namespace-migplan
+    UID:             da23b217-0aba-11ea-ba28-023d7c4f9b9b
+  Resource Version:  178427
+  Self Link:         /apis/migration.openshift.io/v1alpha1/namespaces/openshift-migration/migmigrations/migmigration-multi-namespace
+  UID:               c56e73cb-0abb-11ea-ba28-023d7c4f9b9b
+Spec:
+  Mig Plan Ref:
+    Name:       multi-namespace-migplan
+    Namespace:  openshift-migration
+  Stage:        false
+Status:
+  Conditions:
+    Category:              Advisory
+    Last Transition Time:  2019-11-19T11:05:02Z
+    Message:               Step: 23/24
+    Reason:                FinalRestoreCreated
+    Status:                True
+    Type:                  Running
+    Category:              Required
+    Last Transition Time:  2019-11-19T11:03:57Z
+    Message:               The migration is ready.
+    Status:                True
+    Type:                  Ready
+  Phase:                   FinalRestoreCreated
+  Start Timestamp:         2019-11-19T11:03:57Z
+Events:                    <none>
+----
+
+. Notice how the MigMigration shown above has `Task Phase': Completed.  This means that the migration is complete, and we should be able to verify our apps existence on the destination cluster. You can continuously describe the MigMigration to see phase info, or tail the migration-controller logs with `+oc logs -f <pod-name>+`.
+
+=== Verification
+
+. Let’s login to our 4.2 cluster and run the `+probe.sh+` script to verify that the applications have been migrated and are running:
++
+[source,bash]
+----
+$ $HOME/probe.sh
+Probing app in namespace hello-openshift-1
+Hello OpenShift!
+Probing app in namespace hello-openshift-2
+Hello OpenShift!
+Probing app in namespace hello-openshift-3
+Hello OpenShift!
+Probing app in namespace hello-openshift-4
+Hello OpenShift!
+Probing app in namespace hello-openshift-5
+Hello OpenShift!
+----
+
+== Wrap Up
+
+*Congratulations* and *Thank You* for participating in the OpenShift Application Migration Lab. We hope you have found it to be both informative and thorough. By now you have completed the following activities:
+
+* Familiarized yourself with the CAM WebUI
+* Leveraged CPMA to generate a cluster report
+* Migrated multiple applications (stateless and stateful) from OpenShift 3 to OpenShift 4
+* Performed both Copy and Move operations for handling Persistent Volumes
+* Leveraged the API to migrate multiple namespaces in a single Migration Plan
+
+We’ve included a couple of additional applications in the 3.11 cluster deployment (Parks App & Robot Shop). Feel Free to perform migrations of these applications too (time permitting).
+
+=== More Information
+
+[width="100%",cols="50%,50%",options="header",]
+|===
+|Type |Link
+|Source Code |https://github.com/fusor/mig-operator
+
+|Source Code |https://github.com/fusor/mig-ui
+
+|Source Code |https://github.com/fusor/mig-controller
+
+|Source Code |https://github.com/fusor/mig-demo-apps
+
+|YouTube Channel
+|https://www.youtube.com/channel/UCBDU5UK5Okg3mlIMygpkbNA?view_as=subscriber
+|===
+
+
+

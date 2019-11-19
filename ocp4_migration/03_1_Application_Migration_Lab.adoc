@@ -1,0 +1,499 @@
+:ocp_release: 4.2
+:labname: OpenShift Migration - Application Migration
+
+include::tools/00_0_Lab_Header_Template.adoc[]
+
+== {labname} Lab
+
+.Overview
+
+This lab teaches the student to migrate applications deployed on OCP 3 to OCP 4 Clusters.
+
+NOTE: This lab is a *PILOT*.  It functions, but some details may be wrong.  Please send Pull Requests
+
+.Lab Infrastructure
+
+This lab requires the infrastructure deployed in the prior lab, OpenShift Cluster Migration.  You must complete that lab first to complete this lab.
+
+=== Base requirements
+
+* A computer with access to the Internet :-)
+* SSH client (for Microsoft Windows users https://www.putty.org/[Putty] is recommended)
+* Firefox 17 or higher, or Chromium / Chrome
+* A deployment of both OCP 3 and OCP 4 with the Migration Operator
+
+[[labexercises]]
+
+:numbered:
+
+== About the Cluster Application Migration Tool (CAM)
+
+CAM is designed to migrate Cluster Application Workloads between OpenShift clusters. Specifically, CAM handles migration of k8s resource objects, persistent volumes, and internal images. CAM is designed to provide a migration experience while focusing on minimizing application downtime through the process.
+
+=== Upstream Projects
+
+CAM leverages two upstream projects: https://github.com/heptio/velero[Velero] and https://restic.net/[Restic]. Velero (formerly Heptio Ark) gives you tools to back up and restore your Kubernetes cluster resources and persistent volumes. Restic is a backup program that is fast, efficient and secure.
+
+image:../screenshots/lab4/velero.png[Velero Logo]
+
+=== Architecture
+
+CAM is implemented as a native k8s API extension through a custom resource definition. CAM orchestrates usage of Velero for performing backup/restores. OpenShift specific functionality is implemented in a series of Velero plugins. CAM is also equipped with a React/Patternfly 4 web UI to provide simple interactive experience.
+
+[IMPORTANT]
+====
+* *Migration is at scope of a Namespace*. Future versions will allow selecting resources inside of a Namespace
+* *Cluster Scoped Resources are not handled*. Cluster Role Bindings, SCCs, etc are not handled with migration.
+* *`cluster-admin' role required for initial release targeting OCP 4.2*.
+====
+
+=== Persistent Volume Handling
+
+CAM provides two methods for migrating persistent volumes: (1) *Move* and (2) *Copy*.
+
+* Move or "swinging" the PV recreates the PVC/PV definitions from source cluster to destination cluster. This option is highly desirable for environments with shared storage between the source and target clusters (i.e.  NFS).
++
+image:../screenshots/lab4/movepv.png[Move PV Diagram]
+
+* Copy creates a copy of the data from source cluster into the destination cluster. This option involves creating a PVC on destination and allowing cluster to find a PV to bind to the claim. We then copy data into the PV.
++
+image:../screenshots/lab4/copypv.png[Copy PV Diagram]
+
+=== Actions (Stage and Migrate)
+
+CAM introduces two actions on a Migration Plan:
+
+* *Stage* - Seeds data while leaving application up and running.
+* *Migrate* - Quiesces the application and migrates deltas from prior stage runs.
++
+image:../screenshots/lab4/stage-migrate.png[Migration Actions]
++
+[IMPORTANT]
+====
+* Stage can be run multiple times on a Migration Plan
+* Migrate can only be run once.
+====
+
+=== Migration Process
+
+image:../screenshots/lab4/mig-process.png[Migration Process]
+
+There are 3 steps to the migration process within the CAM tool:
+
+. *Plan*
+
+* Select source cluster
+* Select namespaces
+* Choose Copy or Move for each Persistent volume
+* Specify intermediate object storage
+* Select destination cluster
+
+. *Stage*
+
+* Stages the data from source to destination cluster
+* May be run multiple times
+* No downtime during this step for source applications
+
+. *Migrate*
+
+* Quiesce the application
+* Migrate any delta state since last stage run
+
+=== WebUI
+
+Let’s bring up the webUI in preparation for our first Application Migration.
+
+If you don’t remember the route from the steps above, let’s grab it again from our 4.2 environment.
+
+. On the OCP 4.2 bastion, determine the route of `+migration-ui+`, we will use this later to enable a CORS header on the OCP 3.x side.
++
+[source,bash]
+----
+$ oc get routes migration -n openshift-migration -o jsonpath='{.spec.host}'
+migration-openshift-migration.apps.cluster-a21d.a21d.sandbox67.opentlc.com
+----
+
+. Open Browser to https://migration-openshift-migration.apps.cluster-GUID.GUID.sandboxNNN.opentlc.com
++
+image:../screenshots/lab4/cam-main-screen.png[CAM Main Screen]
+
+We are now ready to perform our first Application Migration.
+
+== Migrate MSSQL Application
+
+The first application that we are going to migrate is a simple Product Inventory web-based application front-end, backed backed by Microsoft SQL Server. This application has been pre-deployed on your 3.11 cluster in the mssql-persistent namespace using a single PV backed by NFS for persistent storage.
+
+. From the 3.11 cluster, we can see the app running:
++
+[source,bash]
+----
+# oc get pods -n mssql-persistent
+NAME                                    READY   STATUS    RESTARTS   AGE
+mssql-app-deployment-6ffb46c5d6-n5fvv   1/1     Running   0          41m
+mssql-deployment-1-xq4p4                1/1     Running   0          41m
+----
+
+. Let’s get the route to the application, and bring up the webUI.
++
+[source,bash]
+----
+# oc get route -n mssql-persistent
+NAME              HOST/PORT                                                       PATH   SERVICES     PORT   TERMINATION   WILDCARD
+mssql-app-route   mssql-app-route-mssql-persistent.apps.cd76.events.opentlc.com          db-app-svc   5000                 None
+----
++
+image:../screenshots/lab5/mssql-product-catalog.png[MSSQL Product Catalog]
+
+. Click on the +Add+ button and enter some data to add a new product to the inventory.
++
+image:../screenshots/lab5/mssql-add-product.png[MSSQL Add Product]
++
+You can see the application is functioning and state is being saved in the DB.
++
+image:../screenshots/lab5/mssql-added-product.png[MSSQL Added Product]
+
+. Let’s also verify that the application is NOT installed on our 4.2 destination cluster. From the OCP 4.2 bastion can see that no pods are running; and in fact the mssql-persistent namespace does _not_ exist.
++
+[source,bash]
+----
+$ oc get pods -n mssql-persistent
+No resources found.
+----
+
+=== Migration Planning with CPMA
+
+In planning our migration, the first step is to check out the CPMA generated report that we created and downloaded in the Cluster Migration lab.
+
+. Point your browser to `+File:///tmp/cpma/report.html+`.
+. Navigate to `+Cluster report > Namespaces+`
+. Click to open the `+PVCs+` section. You’ll see that the `+mssql-persistent+` application has a single PVC defined. This is for a 10Gig volumes backed by NFS. We will need to account for this in our Migration Plan.
++
+image:../screenshots/lab5/mssql-pvcs-cpma.png[MSSQL PVC CPMA]
+
+. Next, click to open the `+SCCs+` section. You’ll see that the `+mssql-persistent+` application makes use of a custom Security Context Constraint. We know from our CAM overview, that SCCs are not migrated as part of a Migration Plan. So, we will need to apply the custom SCC onto our 4.2 Cluster prior to migrating the application. Let’s do this now.
++
+https://raw.githubusercontent.com/redhat-gpte-devopsautomation/ocp4_migration_resources/master/files/mssql-scc.yaml[The custom SCC yaml] is in the GPTE OCP4 Migration Resources repo.
++
+image:../screenshots/lab5/mssql-sccs-cpma.png[MSSQL SCC CPMA]
+
+==== Create MSSQL Security Context Constraint
+
+. Run the following to recreate MSSQL’s `+scc+` on the destination 4.2 cluster:
+
+[source,bash,options="nowrap"]
+----
+$ wget https://raw.githubusercontent.com/redhat-gpte-devopsautomation/ocp4_migration_resources/master/files/mssql-scc.yaml
+$ oc create -f mssql-scc.yaml
+securitycontextconstraints.security.openshift.io/mssql-persistent-scc created
+----
+
+=== Using CAM
+
+. Next, let’s open up the openshift-migration UI. Again, to get the route, run the following command on the destination 4.2 cluster:
++
+[source,bash]
+----
+$ oc get routes migration -n openshift-migration -o jsonpath='{.spec.host}'
+migration-openshift-migration.apps.cluster-d5d0.d5d0.sandbox452.opentlc.com
+----
++
+The screen should look something like:
++
+image:../screenshots/lab5/cam-main-screen.png[CAM Main Screen]
+
+==== Add a Cluster to CAM
+
+. First thing we want to do is add the source OCP cluster we wish to migrate the application from. Click `+Add cluster+`:
++
+image:../screenshots/lab5/cam-add-cluster.png[CAM Add Cluster]
+
+. Fill out the neccessary information. We will need an Service Account Token in order for destination cluster to talk to source cluster:
+
+. `+Run the following against your 3.11 cluster.+`
++
+[source,bash]
+----
+# oc sa get-token mig -n openshift-migration
+eyJhbGciOifsfsds8ahmtpZCI6IiJ9fdsfdseyJpc3MiOiJrdWJlcm5ldGVzL3NlcnZpY2VhY2NvdW50Iiwia3ViZXJuZXRlcy5pby9zZXJ2aWNlYWNjb3VudC9uYW1lc3BhY2UiOiJtaWciLCJrdWJlcm5ldGVzLmlvL3NlcnZpY2VhY2NvdW50L3NlY3JldC5uYW1lIjoibWlnLXRva2VuLTdxMnhjIiwia3ViZXJuZXRlcy5pby9zZXJ2aWNlYWNjb3VudC9zZXJ2aWNlLWFjY291bnQubmFtZSI6Im1pZyIsImt1YmVybmss7gc2VydmljZWFjY291bnQvc2VydmljZS1hY2NvdW50LnVpZCI6IjQ5NjYyZjgxLWEzNDItMTFlOS05NGRjLTA2MDlkNjY4OTQyMCIsInN1YiI6InN5c3RlbTpzZXJ2aWNlYWNjb3VudDptaWc6bWlnIn0.Qhcv0cwP539nSxbhIHFNHen0PNXSfLgBiDMFqt6BvHZBLET_UK0FgwyDxnRYRnDAHdxAGHN3dHxVtwhu-idHKI-mKc7KnyNXDfWe5O0c1xWv63BbEvyXnTNvpJuW1ChUGCY04DBb6iuSVcUMi04Jy_sVez00FCQ56xMSFzy5nLW5QpLFiFOTj2k_4Krcjhs8dgf02dgfkkshshjfgfsdfdsfdsa8fdsgdsfd8fasfdaTScsu4lEDSbMY25rbpr-XqhGcGKwnU58qlmtJcBNT3uffKuxAdgbqa-4zt9cLFeyayTKmelc1MLswlOvu3vvJ2soFx9VzWdPbGRMsjZWWLvJ246oyzwykYlBunYJbX3D_uPfyqoKfzA
+
+----
+NOTE: We need to save the output of the 'get-token', that is the long string we will enter into the openshift-migration-ui when we create a new cluster entry.
+
+. When done, click `+Add Cluster+`. You should see a `+Connection successful+` message. Click `+Close+`.
++
+image:../screenshots/lab5/cam-add-cluster-success.png[CAM Add Cluster Success]
++
+Now you should see the source and destination clusters populated.
++
+image:../screenshots/lab5/cam-clusters-added.png[CAM Clusters Added]
+
+==== Setup a Minio bucket as a replication repository
+
+. Next we want to add a replication repository. Click `+Add Repository+`:
++
+image:../screenshots/lab5/cam-add-repo.png[CAM Add Repo]
+
+. Fill out the information from the from the bucket we created in Lab 2.  Leave the `+S3 Bucket Region+` field blank. Click `+Add repository+` and you should see a `+Connection successful+` message. Click `+Close+`.
++
+[NOTE]
+====
+For Minio:
+
+* S3 Provider Access Key: `+minio+`
+* S3 Provider Secret Access Key: `+minio123+`
+====
++
+image:../screenshots/lab5/cam-add-repo-success.png[CAM Add Repo Success]
+
+. You should now see the repository `+myrepo+` populated.
++
+image:../screenshots/lab5/cam-repo-added.png[CAM Repo Added]
+
+==== Create a Migration Plan
+
+Now that we have a replication repository specified and both the source and destination clusters defined, we can create a migration plan.
+
+. Click `+Add Plan+`:
++
+image:../screenshots/lab5/cam-mig-plan-1.png[CAM Mig Plan 1]
+
+. Fill out a plan name. Click Next.
++
+image:../screenshots/lab5/cam-mig-plan-2.png[CAM Mig Plan 2]
+
+. Select the source and target cluster, the replication repository, and the `+mssql-persistent+` namespace (which we want to migrate over).
++
+Click `Next`.
++
+image:../screenshots/lab5/cam-mig-plan-3.png[CAM Mig Plan 3]
+
+. Now we are displayed a list of persistent volumes associated with our application workload.
++
+Select which type of action you would like to perform on the PV. For this example, let’s select `+copy+`. Click Next.
++
+image:../screenshots/lab5/cam-mig-plan-4.png[CAM Mig Plan 4]
+
+. Select the storage class for your PVs. In this case we will be copying our data from NFS to AWS-EBS (`+gp2:kubernetes.io/aws-ebs+`). Click Next.
++
+image:../screenshots/lab5/cam-mig-plan-5.png[CAM Mig Plan 5]
+
+. After validating the openshift-migration plan, you will see a `+Ready+` message and you can click `+Close+`.
+
+==== Migrate the Application Workload
+
+. Now we can select `+Migrate+` or `+Stage+` on the application. Since we don’t care about downtime for this example, let’s select `+Migrate+`:
++
+image:../screenshots/lab5/cam-mig-plan-added.png[CAM Mig Plan Added]
+
+. Optionally choose to _not_ terminate the application on the source cluster. Leave it unchecked and select `+Migrate+`.
++
+image:../screenshots/lab5/cam-quiesce.png[CAM Quiesce]
++
+The openshift-migration will progress with a progress bar showing each step in the process.
++
+image:../screenshots/lab5/cam-progress-bar.png[CAM Progress Bar]
++
+Once done, you should see `+Migration Succeeded+` on the openshift-migration plan.
++
+image:../screenshots/lab5/cam-migration-complete.png[CAM Migration Complete]
+
+==== Verify application is functioning on Destination Cluster
+
+. Let’s first open the OCP 4.2 web console.
++
+image:../screenshots/lab5/ocp-4-console.png[console]
+
+. Click on the `+mssql-persistent+` namespace.
++
+image:../screenshots/lab5/mssql-namespace-detail.png[ns]
+
+. Click on the `+mssql-app-deployment+` deployment object to retrieve the route.
++
+image:../screenshots/lab5/mssql-app-route.png[route]
+
+. Open the route and verify the application is functional.
++
+image:../screenshots/lab5/mssql-persistent-app-ocp4.png[app]
+
+=== Bonus: Check out copied PV
+
+To verify the application actually copied the PV data over to a new volume, let’s confirm we are no longer using an NFS volume. If everything worked as expected, our OCP 4.2 cluster will use it’s default storage class (gp2) to provision an AWS EBS volume.
+
+. Click on the `+Storage+` tab in the web console and open `+Persistent Volume Claims+` in the mssql-persistent namespace.
++
+image:../screenshots/lab5/mssql-pvc.png[pvc]
+
+. Click on the persistent volume and verify that it is using Amazon Elastic Block Storage as the provisioner.
++
+image:../screenshots/lab5/mssql-pv-yaml.png[pv2]
+
+=== Optional - Resetting the Environments
+
+If you are interested in resetting your 3.11 and 4.2 lab environments to enable re-migration of the mssql-persistent application, follow these steps:
+
+NOTE: This will only work if PVs are migrated with COPY action.
+
+. Delete the `+mssql-mig-plan+` migration plan via the CAM WebUI.
+. Delete the `+mssql-persistent+` namespace from your 4.2 cluster.
++
+[source,bash]
+----
+$ oc delete project mssql-persistent
+project.project.openshift.io "mssql-persistent" deleted
+----
+
+. Redeploy the application on the 3.11 cluster.
++
+[source,bash]
+----
+oc scale deploymentconfig mssql-deployment --replicas=1 -n mssql-deployment
+oc scale deployment mssql-app-deployment --replicas=1 -n mssql-deployment
+----
+
+== Migrate Sock-Shop Application
+
+In this lab we are going to migrate Weaveworks’ Production Internet Store, the Sock Shop. This store is has lots of traffic daily, and Weaveworks is very concerned about minimizing any downtime/unavailability of the store. The Sock Shop is running on your 3.11 cluster, and Weaveworks is very interested in many of the new features of the OpenShift 4.x platform, and wants to migrate.
+
+=== Application Architecture
+
+The architecture of the Sock Shop application was intentionally designed to provide as many micro-services as possible. As seen in the image below, the micro-services are roughly defined by the function in an ECommerce site. Networks are specified, but due to technology limitations may not be implemented in some deployments. All services communicate using REST over HTTP.
+
+image:../screenshots/lab6/sock-shop-arch.png[Sock Shop Architecture]
+
+. If we check our 3.11 cluster, we can see the app running:
++
+[source,bash]
+----
+# oc get pods -n sock-shop
+NAME                            READY     STATUS    RESTARTS   AGE
+carts-77555f7648-sdx48          1/1       Running   0          3h
+carts-db-74db84c448-lv8sk       1/1       Running   0          3h
+catalogue-b5fc87544-cvhb8       1/1       Running   0          3h
+catalogue-db-1-c2f4w            1/1       Running   0          3h
+front-end-5c49687b5c-qgzkj      1/1       Running   0          3h
+orders-56b86d7dd7-gsnxh         1/1       Running   0          3h
+orders-db-7645cb4d78-pmg8s      1/1       Running   0          3h
+payment-685fdbcf67-4kgzn        1/1       Running   0          3h
+queue-master-58bcb789cd-thq9v   1/1       Running   0          3h
+rabbitmq-798d7b5976-7mgdl       2/2       Running   0          3h
+session-db-7cc8ddc4cc-pxvmw     1/1       Running   0          3h
+shipping-5ccdd4b459-dsvxf       1/1       Running   0          3h
+user-5648777687-2zkgs           1/1       Running   0          3h
+user-db-b655656b7-48qzs         1/1       Running   0          3h
+----
+
+. Let’s get the route to the application, and bring up the webUI.
++
+[source,bash]
+----
+# oc get route -n sock-shop
+NAME        HOST/PORT                                          PATH      SERVICES    PORT      TERMINATION   WILDCARD
+front-end   front-end-sock-shop.apps.da30.events.opentlc.com   /         front-end   8079                    None
+----
++
+image:../screenshots/lab6/sock-shop-main.png[Sock Shop Main Page]
+
+=== Migration planning
+
+Again, the first step is to check out the CPMA generated report that we created and downloaded in the Cluster Migration lab.
+
+. Point your browser to `+File:///tmp/cpma/report.html+`.
+
+. Open the `+Cluster report+` section of the report and click on `+Namespaces+`. You’ll see this section contains lots of detailed information by section. Let’s focus our attention in two areas: PVCs and SCCs.
+
+. Click to open the `+PVCs+` section. You’ll see that the Sock Shop application has 4 PVCs defined. Each of these are 10Gig volumes backed by NFS. We will need to account for all 4 of these in our Migration Plan.
++
+image:../screenshots/lab6/sock-shop-pvc-cpma.png[Sock Shop PVC CPMA]
+
+. Click to open the `+SCCs+` section. You’ll see that the Sock Shop application makes use of a custom Security Context Constraint. Again, we will need to apply this to our 4.2 cluster in preparation for migration.  Let’s do this now.
++
+image:../screenshots/lab6/sock-shop-scc-cpma.png[Sock Shop PVC CPMA]
+
+==== Create Sock Shop Security Context Constraint
+
+The custom SCC yaml is available https://raw.githubusercontent.com/redhat-gpte-devopsautomation/ocp4_migration_resources/master/files/sock-shop-scc.yaml[here] (right-click Raw, Save Link As if using local machine). This file is also located on the bastion if desired to create the SCC from there.
+
+. Run the following to recreate Sock Shop’s `+scc+` on the destination 4.2 cluster:
++
+[source,bash]
+----
+$ wget https://raw.githubusercontent.com/redhat-gpte-devopsautomation/ocp4_migration_resources/master/files/sock-shop-scc.yaml
+$ oc create -f sock-shop-scc.yaml
+securitycontextconstraints.security.openshift.io/sock-shop created
+----
+
+=== Using CAM
+
+Next, let’s open up the migration UI.
+
+. Again, to get the route, run the following command on the destination 4.2 cluster:
++
+[source,bash]
+----
+$ oc get routes openshift-migration -n openshift-migration -o jsonpath='{.spec.host}'
+ openshift-migration-mig.apps.cluster-a21d.a21d.sandbox67.opentlc.com
+----
++
+Since we already have our source cluster, target cluster, & replication repository defined; we can move right to creating a migration plan.
++
+. Click `+Add Plan+`:
++
+image:../screenshots/lab6/sock-shop-mig-plan.png[Sock Shop Mig Plan]
+
+. Fill out a plan name. Click Next.
++
+image:../screenshots/lab6/sock-shop-mig-plan-2.png[Sock Shop Plan 2]
+
+. Select the source and target cluster, the replication repository, and the `+sock-shop+` namespace (which we want to migrate over). Click Next.
++
+image:../screenshots/lab6/sock-shop-mig-plan-3.png[Sock Shop Mig Plan 3]
+
+. Now we are displayed the list of persistent volumes associated with our application workload. We should see the four volumes as listed in the CPMA report. Select which type of action you would like to perform on each PV. Since, minimizing downtime is very important in this example, and both of our clusters have access to the NFS shared storage, let’s select `+move+` for each PV. *_Move will re-map the PVs from the source cluster to target cluster, so it’s the fastest option for handling state._* Click Next.
++
+image:../screenshots/lab6/sock-shop-mig-plan-4.png[Sock Shop Mig Plan 4]
+
+. Since all our PVs are being `+moved+`, so destination storage classes need to be specified. Click Next.
++
+image:../screenshots/lab6/sock-shop-mig-plan-5.png[Sock Shop Mig Plan 5]
+
+. After validating the migration plan, you will see a `+Ready+` message and you can click `+Close+`.
+
+==== Migrate the Application Workload
+
+. Now we can select `+Migrate+` or `+Stage+` on the application. Since we have chosen to `+move+` our four PVs, we will click on `+Migrate+`.  _Stage will skip any PVs not using copy._
++
+image:../screenshots/lab6/sock-shop-mig-plan-view.png[Sock Shop Mig Plan View]
+
+. Optionally choose to _not_ terminate the application on the source cluster. Leave it unchecked and select `+Migrate+`.
++
+image:../screenshots/lab6/sock-shop-mig-plan-quiesce.png[Sock Shop Quiesce]
+
+. The migration will progress with a progress bar showing each step in the process.
++
+image:../screenshots/lab6/sock-shop-progress.png[Sock Shop Progress Bar]
+
+. Once done, you should see `+Migration Succeeded+` on the migration plan.
++
+image:../screenshots/lab6/sock-shop-mig-plan-complete.png[Sock Shop Migration Complete]
+
+==== Verify application is functioning on Destination Cluster
+
+. Let’s first open the OCP 4.2 web console and open the `+sock-shop+` namespace.
++
+image:../screenshots/lab6/ocp4-sock-shop.png[console]
+
+. Click on the Storage > PVCs to see the persistent volume claims for the application.
++
+image:../screenshots/lab6/ocp4-sock-shop-pvcs.png[route]
+
+. Drilling down into one of the PVs, we can verify that the underlying storage is the NFS server instance running on our OCP3 cluster. This verifies that our PVs were indeed remapped via `+move+`.
++
+image:../screenshots/lab6/ocp4-sock-shop-pv-yaml.png[app]
++
+image:../screenshots/lab6/success.png[Success]
+
+*Great job*, you have now successfully migrated two applications to your target cluster!
+
+However, what happens when things don’t go as planned? In the next lab, we will examine some techniques for debugging failed migrations.
+
+Next Lab: https://raw.githubusercontent.com/redhat-cop/openshift-lab-origin/master/ocp4_migration/04_1_Migration_Debugging_and_Scale_Lab.adoc
