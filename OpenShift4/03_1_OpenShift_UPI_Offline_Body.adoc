@@ -320,7 +320,7 @@ TIP: Commands that you should run will appear in *bold*. Sample output will appe
 +
 [source,subs="{markup-in-source}"]
 ----
-# *ansible localhost -m lineinfile -a 'path=~/.bashrc regexp="^export OCP_RELEASE" line="export OCP_RELEASE=4.2.1"'*
+# *ansible localhost -m lineinfile -a 'path=~/.bashrc regexp="^export OCP_RELEASE" line="export OCP_RELEASE=4.2.2"'*
 # *source ~/.bashrc*
 ----
 
@@ -793,11 +793,6 @@ phase 0:
 
 info: Planning completed in 18.8s
 uploading: utilityvm.opentlc.internal:5000/ocp4/openshift4 sha256:7b1c937e0f6794db2535be6e4cb6d60a0b668ef78c2576611a3fb9c97a95ccdf 72.71MiB
-uploading: utilityvm.opentlc.internal:5000/ocp4/openshift4 sha256:9fbc3152112759b4acd715b4dd2f431b174de582057f0dd63c8c7087a5dff60a 495.7KiB
-...
-...
-sha256:59a4734e085c16e795d391a557743972255a795fd1c69d8d75d3949d1917ff76 utilityvm.opentlc.internal:5000/ocp4/openshift4:cluster-kube-scheduler-operator
-sha256:2ac8baef4ac207438a035555d56fd76e0a34ab6263e0765ed0068f3897b40d49 utilityvm.opentlc.internal:5000/ocp4/openshift4:operator-lifecycle-manager
 info: Mirroring completed in 58.2s (80.4MB/s)
 
 Success
