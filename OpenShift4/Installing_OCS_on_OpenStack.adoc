@@ -24,29 +24,37 @@ oc get machineset -n openshift-machine-api
 .Sample Output
 [source,texinfo]
 ----
-NAME              DESIRED   CURRENT   READY   AVAILABLE   AGE
-wk-tggnh-worker   2         2         2       2           28h
+NAME                 DESIRED   CURRENT   READY   AVAILABLE   AGE
+f039-tks82-worker    0         0                             6d15h
+general-purpose-1a   1         1         1       1           6d14h
+general-purpose-1b   1         1         1       1           6d14h
+infra-1a             1         1         1       1           6d14h
+logging-1a           1         1         1       1           6d13h
 ----
 
-. Export the MachineSet definition as YAML
+. Export a MachineSet definition as YAML
 +
 [source,sh]
 ----
-oc get machineset wk-tggnh-worker -o yaml >ocs-machineset.yaml
+oc get machineset infra-1a -o yaml >ocs-1a.yaml
 ----
 
 . Edit the MachineSet YAML file:
-.. From metadata remove everything except `name`, `namespace` and `labels`. Change the name from `<clustername>-<clusterid>-worker` to `<clustername>-<clusterid>-ocs`. In the example above this would be `wk-tggnh-worker` to `wk-tggnh-ocs`.
-.. Change `<clustername>-<clusterid>-worker` to `<clustername>-<clusterid>-ocs` in the rest of the file for all selectors and labels.
-.. Under spec.template.spec.metadata.labels add the following labels:
+.. From metadata remove everything except `name`, `namespace` and `labels`. Change the name from `infra-1a` to `ocs-1a` (or something similar depending on your environment)
+.. Change `infra-1a` to `ocs-1a` (or similar) in the rest of the file for all selectors and labels.
+.. Under spec.template.spec.metadata.labels add the following label(s):
 * `cluster.ocs.openshift.io/openshift-storage: ""`
-* `role: storage-node`
-.. Under spec.template.spec add the taints `node.ocs.openshift.io/storage=true:NoSchedule` to keep non OCS pods off these nodes.
-.. Set the instance `flavor` to `xlarge` (16 vCPUs, 32Gi memory).
+.. Change the node role to
+* `node-role.kubernetes.io/ocs: ""`
+// .. Under spec.template.spec add the taints `node.ocs.openshift.io/storage="true":NoSchedule` to keep non OCS pods off these nodes (make sure to put `true` in double quotes).
+.. Set the instance `flavor` to `8c32g30d` (8 vCPUs, 32Gi memory).
+.. Set the number of replicas to 3.
 .. Leave everything else the way it is.
 +
 [NOTE]
-The label `cluster.ocs.openshift.io/openshift-storage: ""` and the taint `node.ocs.openshift.io/storage=true:NoSchedule` are usually set by the OCS Deployment Wizard in the web console. But we can not use that wizard because we need to modify the Custom Resource for the storage cluster.
+The label `cluster.ocs.openshift.io/openshift-storage: ""`
+// and the taint `node.ocs.openshift.io/storage=true:NoSchedule` are 
+is usually set by the OCS Deployment Wizard in the web console. But we can not use that wizard because we need to modify the Custom Resource for the storage cluster.
 +
 . Example of completed MachineSet:
 [source,yaml]
@@ -54,35 +62,32 @@ The label `cluster.ocs.openshift.io/openshift-storage: ""` and the taint `node.o
 apiVersion: machine.openshift.io/v1beta1
 kind: MachineSet
 metadata:
-  name: wk-tggnh-ocs
-  namespace: openshift-machine-api
   labels:
-    machine.openshift.io/cluster-api-cluster: wk-tggnh
+    machine.openshift.io/cluster-api-cluster: f039-tks82
     machine.openshift.io/cluster-api-machine-role: worker
     machine.openshift.io/cluster-api-machine-type: worker
+  name: ocs-1a
+  namespace: openshift-machine-api
 spec:
   replicas: 3
   selector:
     matchLabels:
-      machine.openshift.io/cluster-api-cluster: wk-tggnh
-      machine.openshift.io/cluster-api-machineset: wk-tggnh-ocs
+      machine.openshift.io/cluster-api-cluster: f039-tks82
+      machine.openshift.io/cluster-api-machineset: ocs-1a
   template:
     metadata:
       labels:
-        machine.openshift.io/cluster-api-cluster: wk-tggnh
+        machine.openshift.io/cluster-api-cluster: f039-tks82
         machine.openshift.io/cluster-api-machine-role: worker
         machine.openshift.io/cluster-api-machine-type: worker
-        machine.openshift.io/cluster-api-machineset: wk-tggnh-ocs
+        machine.openshift.io/cluster-api-machineset: ocs-1a
     spec:
       metadata:
         labels:
-          node-role.kubernetes.io/worker: ""
+          failure-domain.beta.kubernetes.io/region: regionOne
+          failure-domain.beta.kubernetes.io/zone: nova
+          node-role.kubernetes.io/ocs: ""
           cluster.ocs.openshift.io/openshift-storage: ""
-          role: storage-node
-      taints:
-      - effect: NoSchedule
-        key: node.ocs.openshift.io/storage
-        value: "true"
       providerSpec:
         value:
           apiVersion: openstackproviderconfig.openshift.io/v1alpha1
@@ -90,35 +95,37 @@ spec:
           cloudsSecret:
             name: openstack-cloud-credentials
             namespace: openshift-machine-api
-          flavor: xlarge
-          image: rhcos
+          flavor: 8c32g30d
+          image: rhcos-ocp42
           kind: OpenstackProviderSpec
-          metadata:
-            creationTimestamp: null
           networks:
           - filter: {}
             subnets:
-            - filter:
-                name: wk-tggnh-nodes
-                tags: openshiftClusterID=wk-tggnh
+            - filter:    
+                name: f039-ocp-subnet
           securityGroups:
           - filter: {}
-            name: wk-tggnh-worker
+            name: f039-worker_sg
           serverMetadata:
-            Name: wk-tggnh-worker
-            openshiftClusterID: wk-tggnh
+            Name: f039-tks82-worker
+            openshiftClusterID: f039-tks82
           tags:
-          - openshiftClusterID=wk-tggnh
+          - openshiftClusterID=f039-tks82
           trunk: true
           userDataSecret:
-            name: worker-user-data        
+            name: worker-user-data
 ----
+//       taints:
+//       - effect: NoSchedule
+//         key: node.ocs.openshift.io/storage
+//         value: "true"
+// ----
 
 . Create the MachineSet
 +
 [source,sh]
 ----
-oc apply -f ocs-machineset.yaml
+oc apply -f ocs-1a.yaml
 ----
 
 . Wait until the Machines are `ACTIVE`
@@ -131,20 +138,22 @@ oc get machines -n openshift-machine-api
 .Sample Output
 [source,texinfo]
 ----
-NAME                    STATE    TYPE     REGION      ZONE   AGE
-wk-tggnh-master-0       ACTIVE   large    regionOne   nova   28h
-wk-tggnh-master-1       ACTIVE   large    regionOne   nova   28h
-wk-tggnh-master-2       ACTIVE   large    regionOne   nova   28h
-wk-tggnh-ocs-5j8dv      ACTIVE   xlarge   regionOne   nova   123m
-wk-tggnh-ocs-gs2hm      ACTIVE   xlarge   regionOne   nova   123m
-wk-tggnh-ocs-vkfd4      ACTIVE   xlarge   regionOne   nova   123m
-wk-tggnh-worker-b2sl2   ACTIVE   large    regionOne   nova   28h
-wk-tggnh-worker-x222s   ACTIVE   large    regionOne   nova   28h
+NAME                       STATE    TYPE       REGION      ZONE   AGE
+f039-tks82-master-0        ACTIVE   4c16g30d   regionOne   nova   6d15h
+f039-tks82-master-1        ACTIVE   4c16g30d   regionOne   nova   6d15h
+f039-tks82-master-2        ACTIVE   4c16g30d   regionOne   nova   6d15h
+general-purpose-1a-tfdjm   ACTIVE   4c12g30d   regionOne   nova   6d14h
+general-purpose-1b-mrkvh   ACTIVE   4c12g30d   regionOne   nova   6d14h
+infra-1a-fl9vp             ACTIVE   4c12g30d   regionOne   nova   6d14h
+logging-1a-m2bfk           ACTIVE   4c16g30d   regionOne   nova   6d14h
+ocs-1a-9krk5               ACTIVE   8c32g30d   regionOne   nova   3m17s
+ocs-1a-nqhh2               ACTIVE   8c32g30d   regionOne   nova   3m17s
+ocs-1a-qh6vx               ACTIVE   8c32g30d   regionOne   nova   4m17s
 ----
 +
-If any Machines are in error check the machine, machineset, events and the `machine-api-controllers-*` pod logs. You may need to increate the Quota for the cluster.
+If any Machines are in error check the machine, machineset, events and the `machine-api-controllers` pod logs. You may need to increate the Quota for the cluster.
 
-. Validate that your Nodes are `Ready`.
+. Validate that your Nodes are `Ready` (this may take 5-6 minute).
 +
 [source,sh]
 ----
@@ -154,37 +163,61 @@ oc get nodes
 .Sample Output
 [source,texinfo]
 ----
-NAME                    STATUS   ROLES    AGE    VERSION
-wk-tggnh-master-0       Ready    master   28h    v1.14.6+7e13ab9a7
-wk-tggnh-master-1       Ready    master   28h    v1.14.6+7e13ab9a7
-wk-tggnh-master-2       Ready    master   28h    v1.14.6+7e13ab9a7
-wk-tggnh-ocs-5j8dv      Ready    worker   124m   v1.14.6+7e13ab9a7
-wk-tggnh-ocs-gs2hm      Ready    worker   124m   v1.14.6+7e13ab9a7
-wk-tggnh-ocs-vkfd4      Ready    worker   124m   v1.14.6+7e13ab9a7
-wk-tggnh-worker-b2sl2   Ready    worker   28h    v1.14.6+7e13ab9a7
-wk-tggnh-worker-x222s   Ready    worker   28h    v1.14.6+7e13ab9a7
+NAME                       STATUS   ROLES                AGE     VERSION
+f039-tks82-master-0        Ready    master               6d15h   v1.14.6+888f9c630
+f039-tks82-master-1        Ready    master               6d15h   v1.14.6+888f9c630
+f039-tks82-master-2        Ready    master               6d15h   v1.14.6+888f9c630
+general-purpose-1a-tfdjm   Ready    general-use,worker   6d14h   v1.14.6+888f9c630
+general-purpose-1b-mrkvh   Ready    general-use,worker   6d14h   v1.14.6+888f9c630
+infra-1a-fl9vp             Ready    infra,worker         6d14h   v1.14.6+888f9c630
+logging-1a-m2bfk           Ready    logging,worker       6d14h   v1.14.6+888f9c630
+ocs-1a-9krk5               Ready    ocs,worker           49s     v1.14.6+888f9c630
+ocs-1a-nqhh2               Ready    ocs,worker           21s     v1.14.6+888f9c630
+ocs-1a-qh6vx               Ready    ocs,worker           101s    v1.14.6+888f9c630
 ----
 
 == Deploy OpenShift Container Storage Operator
 
-. The operators can be deployed by running the following command.
+. Create the namespace `openshift-storage`.
 +
 [source,sh]
 ----
-oc apply -f https://raw.githubusercontent.com/openshift/ocs-operator/release-4.2/deploy/deploy-with-olm.yaml
+cat << 'EOF' >$HOME/ocs-namespace.yaml
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: openshift-storage
+  labels:
+    openshift.io/cluster-monitoring: "true"
+spec: {}
+EOF
+
+oc create -f $HOME/ocs-namespace.yaml
 ----
+
+. Follow the instructions at https://access.redhat.com/documentation/en-us/red_hat_openshift_container_storage/4.2/html/deploying_openshift_container_storage/deploying-openshift-container-storage#installing-openshift-container-storage-operator-using-the-operator-hub_rhocs to deploy the OpenShift Container Storage Operator into the `openshift-storage` project.
 +
-.Sample Output
-[source,texinfo]
-----
-namespace/openshift-storage created
-namespace/local-storage created
-operatorgroup.operators.coreos.com/openshift-storage-operatorgroup created
-operatorgroup.operators.coreos.com/local-operator-group created
-catalogsource.operators.coreos.com/local-storage-manifests created
-catalogsource.operators.coreos.com/ocs-catalogsource created
-subscription.operators.coreos.com/ocs-subscription created
-----
+[IMPORTANT]
+*Do not deploy the Storage Cluster from the OLM.*
++
+// . The operators can be deployed by running the following command.
+// +
+// [source,sh]
+// ----
+// oc apply -f https://raw.githubusercontent.com/openshift/ocs-operator/release-4.2/deploy/deploy-with-olm.yaml
+// ----
+// +
+// .Sample Output
+// [source,texinfo]
+// ----
+// namespace/openshift-storage created
+// namespace/local-storage created
+// operatorgroup.operators.coreos.com/openshift-storage-operatorgroup created
+// operatorgroup.operators.coreos.com/local-operator-group created
+// catalogsource.operators.coreos.com/local-storage-manifests created
+// catalogsource.operators.coreos.com/ocs-catalogsource created
+// subscription.operators.coreos.com/ocs-subscription created
+// ----
 
 . Switch to the `openshift-storage` project.
 +
@@ -193,7 +226,7 @@ subscription.operators.coreos.com/ocs-subscription created
 oc project openshift-storage
 ----
 
-. Wait until the Cluster Service Versions show `Succeeded` as the status.
+. Wait until the Cluster Service Version show `Succeeded` as the status.
 +
 [source,sh]
 ----
@@ -203,9 +236,9 @@ oc get csv
 .Sample Output
 [source,texinfo,options="nowrap"]
 ----
-NAME                                        DISPLAY                                VERSION              REPLACES                              PHASE
-local-storage-operator.4.2.0-201910101614   Local Storage                          4.2.0-201910101614                                         Succeeded
-ocs-operator.v0.0.1                         Openshift Container Storage Operator   0.0.1                                                      Succeeded
+NAME                                         DISPLAY                       VERSION               REPLACES                                     PHASE
+elasticsearch-operator.4.2.14-202001061701   Elasticsearch Operator        4.2.14-202001061701   elasticsearch-operator.4.2.13-201912230557   Succeeded
+ocs-operator.v4.2.0                          OpenShift Container Storage   4.2.0                                                              Succeeded
 ----
 
 . Validate that your Operator pods are running:
@@ -218,96 +251,98 @@ oc get pod -n openshift-storage
 .Sample Output
 [source,texinfo]
 ----
-NAME                                                              READY   STATUS      RESTARTS   AGE
-local-storage-operator-6cf56d5cf-gz7xr                            1/1     Running     0          118m
-ocs-operator-6cf498ff89-d77rn                                     1/1     Running     0          118m
+NAME                                  READY   STATUS    RESTARTS   AGE
+noobaa-operator-d8f77bfd9-tmzwp       1/1     Running   0          92s
+ocs-operator-6b9f889bb9-f7db6         1/1     Running   0          92s
+rook-ceph-operator-69c8dd848b-nszc8   1/1     Running   0          92s
 ----
 
 . Create the `StorageCluster` YAML Manifest.
 +
 [source,sh]
 ----
-cat << 'EOF' >ocs.yaml
+cat << 'EOF' >$HOME/ocs.yaml
 apiVersion: ocs.openshift.io/v1
 kind: StorageCluster
 metadata:
   name: ocs-storagecluster
   namespace: openshift-storage
 spec:
-  managedNodes: false
+  manageNodes: false
   storageDeviceSets:
-  - count: 3
+  - name: ocs-deviceset
+    count: 1
     dataPVCTemplate:
       spec:
         accessModes:
         - ReadWriteOnce
         resources:
           requests:
-            storage: 100Gi
-        storageClassName: standard
+            storage: 15Gi
+        storageClassName: "standard"
         volumeMode: Block
-    name: ocs-deviceset
     placement: {}
     portable: true
+    replica: 3
     resources: {}
 EOF
 ----
 +
 [NOTE]
-There are two changes compared to when you would have created this via the Operator Management in the OpenShift console. We are setting the `storageClassName` to `standard` (it is empty by default) and we are changing the storage request from `1Ti` to `100Gi`. Without these changes the deployment would fail.
+There are two changes compared to when you would have created this via the Operator Management in the OpenShift console. We are setting the `storageClassName` to `standard` (it is empty by default) and we are changing the storage request from `1Ti` to `15Gi`. Without these changes the deployment would fail.
 
 . Create the StorageCluster.
 +
 [source,sh]
 ----
-oc apply -f ocs.yaml
+oc create -f $HOME/ocs.yaml
 ----
 
 . This will create the entire storage system. This will take a while. Watch the pods until every pod is running and ready. The final state should look similar to this:
 +
 [source,sh]
 ----
-oc get pod -n openshift-storage
+watch oc get pod -n openshift-storage
 ----
 +
 .Sample Output
 [source,texinfo]
 ----
 NAME                                                              READY   STATUS      RESTARTS   AGE
-csi-cephfsplugin-4smtt                                            3/3     Running     0          95m
-csi-cephfsplugin-74hnr                                            3/3     Running     0          95m
-csi-cephfsplugin-8wpm8                                            3/3     Running     0          95m
-csi-cephfsplugin-dtbn7                                            3/3     Running     0          95m
-csi-cephfsplugin-mxxxx                                            3/3     Running     0          95m
-csi-cephfsplugin-provisioner-57f65684f4-62p5f                     4/4     Running     0          95m
-csi-cephfsplugin-provisioner-57f65684f4-m5hmc                     4/4     Running     0          95m
-csi-rbdplugin-8llxk                                               3/3     Running     0          95m
-csi-rbdplugin-crfj4                                               3/3     Running     0          95m
-csi-rbdplugin-provisioner-54985c744b-7p44m                        5/5     Running     0          95m
-csi-rbdplugin-provisioner-54985c744b-xsc4q                        5/5     Running     0          95m
-csi-rbdplugin-w4l95                                               3/3     Running     0          95m
-csi-rbdplugin-xgzht                                               3/3     Running     0          95m
-csi-rbdplugin-xq76c                                               3/3     Running     0          95m
-local-storage-operator-6cf56d5cf-gz7xr                            1/1     Running     0          123m
-noobaa-core-0                                                     2/2     Running     0          91m
-noobaa-operator-57bb649ff7-clpbg                                  1/1     Running     0          122m
-ocs-operator-6cf498ff89-d77rn                                     1/1     Running     0          122m
-rook-ceph-drain-canary-wk-tggnh-ocs-5j8dv-57ff844655-llrrx        1/1     Running     0          91m
-rook-ceph-drain-canary-wk-tggnh-ocs-gs2hm-7f48f6bb76-8vq4z        1/1     Running     0          90m
-rook-ceph-mds-ocs-storagecluster-cephfilesystem-a-799df6db69jnq   1/1     Running     0          91m
-rook-ceph-mds-ocs-storagecluster-cephfilesystem-b-75b9c97cw7d8d   1/1     Running     0          91m
-rook-ceph-mgr-a-6cd8c754b5-qcjxn                                  1/1     Running     0          92m
-rook-ceph-mon-a-74685c7f44-4zj2h                                  1/1     Running     0          94m
-rook-ceph-mon-b-56ff6c9585-5hmwg                                  1/1     Running     0          93m
-rook-ceph-mon-c-69896c6c7d-chbsf                                  1/1     Running     0          93m
-rook-ceph-operator-64d69886b9-cw6zm                               1/1     Running     0          122m
-rook-ceph-osd-0-b5579c7d-fwkxq                                    1/1     Running     0          91m
-rook-ceph-osd-1-54db7d868f-nxm96                                  1/1     Running     0          91m
-rook-ceph-osd-2-7fd44b75cf-f8d7p                                  1/1     Running     0          91m
-rook-ceph-osd-prepare-ocs-deviceset-0-0-5cmdg-d9phs               0/1     Completed   0          92m
-rook-ceph-osd-prepare-ocs-deviceset-1-0-l779f-4f9nh               0/1     Completed   0          92m
-rook-ceph-osd-prepare-ocs-deviceset-2-0-trlm8-rncbs               0/1     Completed   0          92m
-rook-ceph-rgw-ocs-storagecluster-cephobjectstore-a-5f99599lq8bm   1/1     Running     0          90m
+csi-cephfsplugin-2qrpp                                            3/3     Running     0          6m14s
+csi-cephfsplugin-9bj5x                                            3/3     Running     0          6m15s
+csi-cephfsplugin-d2nbz                                            3/3     Running     0          6m15s
+csi-cephfsplugin-fwbjv                                            3/3     Running     0          6m15s
+csi-cephfsplugin-provisioner-5b9fc6bc65-m8jkv                     4/4     Running     0          6m15s
+csi-cephfsplugin-provisioner-5b9fc6bc65-z97sk                     4/4     Running     0          6m15s
+csi-cephfsplugin-r8nnb                                            3/3     Running     0          6m15s
+csi-rbdplugin-kchk8                                               3/3     Running     0          6m15s
+csi-rbdplugin-nvh4d                                               3/3     Running     0          6m15s
+csi-rbdplugin-provisioner-f846955f5-sktks                         4/4     Running     0          6m15s
+csi-rbdplugin-provisioner-f846955f5-xzmk5                         4/4     Running     0          6m15s
+csi-rbdplugin-r2qft                                               3/3     Running     0          6m15s
+csi-rbdplugin-v56fq                                               3/3     Running     0          6m15s
+csi-rbdplugin-xdllz                                               3/3     Running     0          6m15s
+noobaa-core-0                                                     2/2     Running     0          2m20s
+noobaa-operator-854756dff7-6vhzl                                  1/1     Running     0          6m54s
+ocs-operator-76b75cb5d9-9g8g6                                     1/1     Running     0          6m54s
+rook-ceph-drain-canary-ocs-1a-plcgm-7fd767444d-jw4n6              1/1     Running     0          2m26s
+rook-ceph-drain-canary-ocs-1a-szr6p-7dd6675f95-ltmf4              1/1     Running     0          2m27s
+rook-ceph-drain-canary-ocs-1a-xdfdd-6b44d4b94d-896z4              1/1     Running     0          2m34s
+rook-ceph-mds-ocs-storagecluster-cephfilesystem-a-7bdf75bb4x27b   1/1     Running     0          2m13s
+rook-ceph-mds-ocs-storagecluster-cephfilesystem-b-6549dbdb42xbd   1/1     Running     0          2m13s
+rook-ceph-mgr-a-5c56bf48f6-sc8qk                                  1/1     Running     0          3m25s
+rook-ceph-mon-a-7bd94c6494-cgzgq                                  1/1     Running     0          5m3s
+rook-ceph-mon-b-76447c44cf-hpf2l                                  1/1     Running     0          4m38s
+rook-ceph-mon-c-7b5755dfd8-6gv28                                  1/1     Running     0          3m57s
+rook-ceph-operator-dd7759478-4pwh2                                1/1     Running     0          6m54s
+rook-ceph-osd-0-5b9f48cf89-2hd7d                                  1/1     Running     0          2m34s
+rook-ceph-osd-1-546bd6c6c7-ckqp9                                  1/1     Running     0          2m27s
+rook-ceph-osd-2-6c759fcc99-46bk6                                  1/1     Running     0          2m26s
+rook-ceph-osd-prepare-ocs-deviceset-0-0-mw65m-69hn2               0/1     Completed   0          3m1s
+rook-ceph-osd-prepare-ocs-deviceset-1-0-m4jfn-vgwwl               0/1     Completed   0          3m1s
+rook-ceph-osd-prepare-ocs-deviceset-2-0-5lwgg-7st55               0/1     Completed   0          3m1s
+rook-ceph-rgw-ocs-storagecluster-cephobjectstore-a-878f9999k964   1/1     Running     0          114s
 ----
 
 . OpenShift Container Storage is ready to be used.
@@ -322,54 +357,40 @@ oc get sc
 [source,texinfo]
 ----
 NAME                          PROVISIONER                             AGE
-ocs-storagecluster-ceph-rbd   openshift-storage.rbd.csi.ceph.com      4h40m
-ocs-storagecluster-cephfs     openshift-storage.cephfs.csi.ceph.com   4h40m
-openshift-storage.noobaa.io   openshift-storage.noobaa.io/obc         86m
-standard (default)            kubernetes.io/cinder                    28h
+ocs-storagecluster-ceph-rbd   openshift-storage.rbd.csi.ceph.com      5h27m
+ocs-storagecluster-cephfs     openshift-storage.cephfs.csi.ceph.com   5h27m
+openshift-storage.noobaa.io   openshift-storage.noobaa.io/obc         80s
+standard (default)            kubernetes.io/cinder                    6d20h
 ----
 
-== Accessing the NooBaa Dashboard
+== Accessing the Storage Dashboards
 
-The OCS Operator creates a service `noobaa-mgmt` of type LoadBalancer. This however doesn't work on (our) OpenStack (cluster).
-
-. Create a route for the NooBaa management application
+. In your OpenShift Web Console select *Home* and then *Dashboards* in the navigator on the left.
 +
-[source,sh]
-----
-oc create route passthrough noobaa-mgmt --service=noobaa-mgmt --port=8443 --insecure-policy='Redirect'
-----
+You will see that there are additional dashboards available now: *Persistent Storage* and *Object Service*
+. Explore these dashboards.
+. From the *Object Service* Dashboard open the *Noobaa* dashboard by clicking on the *noobaa* link (you have to open that link in a Chrome compatible browser).
 
-. Retrieve the created route:
-+
-[source,sh]
-----
-oc get route
-----
-+
-.Sample Output
-[source,texinfo]
-----
-NAME           HOST/PORT                                              PATH   SERVICES      PORT   TERMINATION            WILDCARD
-noobaa-mgmt    noobaa-mgmt-openshift-storage.apps.wk.wkulhanek.com           noobaa-mgmt   8443   passthrough/Redirect   None
-----
 
-. Retrieve the access credentials for NooBaa
-+
-[source,sh]
-----
-oc get secret noobaa-admin -n openshift-storage -o json | jq '.data|map_values(@base64d)'
-----
-+
-.Sample Output
-[source,texinfo]
-----
-{
-  "AWS_ACCESS_KEY_ID": "<redacted>",
-  "AWS_SECRET_ACCESS_KEY": "<redacted>",
-  "email": "admin@noobaa.io",
-  "password": "<redacted>",
-  "system": "noobaa"
-}
-----
+// == Accessing the NooBaa Dashboard
 
-. Use the created Route (in a Chrome compatible browser) to open the NooBaa web interface. Use the `email` and `password` from the secret to log into NooBaa.
+// . Retrieve the Noobaa route:
+// +
+// [source,sh]
+// ----
+// oc get route -n openshift-storage
+// ----
+// +
+// .Sample Output
+// [source,texinfo]
+// ----
+// NAME          HOST/PORT                                                      PATH   SERVICES      PORT         TERMINATION   WILDCARD
+// noobaa-mgmt   noobaa-mgmt-openshift-storage.apps.f039.blue.osp.opentlc.com          noobaa-mgmt   mgmt-https   reencrypt     None
+// s3            s3-openshift-storage.apps.f039.blue.osp.opentlc.com                   s3            s3-https     reencrypt     None
+// ----
+
+// . Use the created Route (in a Chrome compatible browser) to open the NooBaa web interface. Use a cluster-admin user to log into NooBaa.
+
+== Conclusion
+
+This concludes this lab. You now have OpenShift Container Storage deployed on your cluster and ready to use.
