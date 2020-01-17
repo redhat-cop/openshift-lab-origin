@@ -201,7 +201,7 @@ In current versions of OpenShift there is a bug where some monitoring components
 To force the Monitoring operators to rotate its certificates edit an empty line at the end of one of the certificates in the config map *extension-apiserver-authentication* in project *kube-system*.
 
 The following Ansible playbook will do that (pass _user_ and _cluster_name_ to the playbook):
-+
+
 [source,sh]
 ----
 ---
