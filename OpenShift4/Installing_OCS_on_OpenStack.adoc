@@ -47,7 +47,7 @@ oc get machineset infra-1a -o yaml >ocs-1a.yaml
 .. Change the node role to
 * `node-role.kubernetes.io/ocs: ""`
 // .. Under spec.template.spec add the taints `node.ocs.openshift.io/storage="true":NoSchedule` to keep non OCS pods off these nodes (make sure to put `true` in double quotes).
-.. Set the instance `flavor` to `8c32g30d` (8 vCPUs, 32Gi memory).
+.. Set the instance `flavor` to `12c32g30d` (12 vCPUs, 32Gi memory).
 .. Set the number of replicas to 3.
 .. Leave everything else the way it is.
 +
@@ -95,7 +95,7 @@ spec:
           cloudsSecret:
             name: openstack-cloud-credentials
             namespace: openshift-machine-api
-          flavor: 8c32g30d
+          flavor: 12c32g30d
           image: rhcos-ocp42
           kind: OpenstackProviderSpec
           networks:
