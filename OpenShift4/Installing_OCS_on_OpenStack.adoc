@@ -195,6 +195,27 @@ EOF
 oc create -f $HOME/ocs-namespace.yaml
 ----
 
+. Create the OperatorGroup.
++
+[source,sh]
+----
+cat << 'EOF' >$HOME/rhocs-operatorgroup.yaml
+apiVersion: operators.coreos.com/v1
+kind: OperatorGroup
+metadata:
+  name: openshift-storage-operatorgroup
+  namespace: openshift-storage
+spec:
+  serviceAccount:
+    metadata:
+      creationTimestamp: null
+  targetNamespaces:
+  - openshift-storage
+EOF
+
+oc create -f $HOME/rhocs-operatorgroup.yaml
+----
+
 . Follow the instructions at https://access.redhat.com/documentation/en-us/red_hat_openshift_container_storage/4.2/html/deploying_openshift_container_storage/deploying-openshift-container-storage#installing-openshift-container-storage-operator-using-the-operator-hub_rhocs to deploy the OpenShift Container Storage Operator into the `openshift-storage` project.
 +
 [IMPORTANT]
