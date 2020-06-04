@@ -1,0 +1,949 @@
+= OpenShift Pipelines Lab
+
+This lab explores the use of OpenShift Pipelines on OpenShift Container Platform.
+
+== Set up Source Code repositories
+
+You will use a simple application during this lab, which has a frontend and backend. While you could deploy the applications by applying the artifacts available in k8s directory of the respective repo you will use a pipeline task to create the application in case it doesn't exist yet.
+
+. From your studentVM clone the two source code repositories that make up the application into the directory `$HOME/pipelines`:
++
+[source,sh]
+----
+cd $HOME
+mkdir pipelines
+cd pipelines
+git clone https://github.com/openshift-pipelines/vote-api.git
+git clone https://github.com/openshift-pipelines/vote-ui.git
+----
+
+. In your Gogs instance create a new organization *Pipeline*
+. In that organization create two new repositories: `vote-api` and `vote-ui`. Leave the repositories public.
+. From your student VM push the `vote-api` and `vote-ui` repositories to your Gogs instance:
++
+[source,sh]
+----
+cd $HOME/pipelines/vote-api
+git remote add gogs $(oc get route gogs-gogs -n $GUID-gogs --template='http://{{.spec.host}}')/pipeline/vote-api
+git push gogs master
+
+cd $HOME/pipelines/vote-ui
+git remote add gogs $(oc get route gogs-gogs -n $GUID-gogs --template='http://{{.spec.host}}')/pipeline/vote-ui
+git push gogs master
+----
+
+. Create a new project `$GUID-pipeline`
++
+[source,sh]
+----
+oc new-project $GUID-pipeline
+----
+
+. OpenShift Pipelines automatically adds and configures a ServiceAccount named pipeline in every project. This service account has sufficient permissions to build and push an image.
++
+Run the following command to see the pipeline service account:
++
+[source,sh]
+----
+oc get serviceaccount pipeline
+----
+
+== Install Custom Tasks
+
+. OpenShift Pipelines already installs a few common *ClusterTasks* into the OpenShift cluster. You can list the available cluster tasks using the `tkn` command line utility:
++
+[source,sh]
+----
+tkn clustertasks ls
+----
++
+.Sample Output
+[source,texinfo]
+----
+NAME                       AGE
+buildah                    5 days ago
+buildah-v0-11-3            5 days ago
+git-clone                  5 days ago
+jib-maven                  5 days ago
+kn                         5 days ago
+maven                      5 days ago
+openshift-client           5 days ago
+openshift-client-v0-11-3   5 days ago
+s2i                        5 days ago
+s2i-dotnet-3               5 days ago
+s2i-dotnet-3-v0-11-3       5 days ago
+s2i-go                     5 days ago
+s2i-go-v0-11-3             5 days ago
+s2i-java-11                5 days ago
+s2i-java-11-v0-11-3        5 days ago
+s2i-java-8                 5 days ago
+s2i-java-8-v0-11-3         5 days ago
+s2i-nodejs                 5 days ago
+s2i-nodejs-v0-11-3         5 days ago
+s2i-perl                   5 days ago
+s2i-perl-v0-11-3           5 days ago
+s2i-php                    5 days ago
+s2i-php-v0-11-3            5 days ago
+s2i-python-3               5 days ago
+s2i-python-3-v0-11-3       5 days ago
+s2i-ruby                   5 days ago
+s2i-ruby-v0-11-3           5 days ago
+s2i-v0-11-3                5 days ago
+tkn                        5 days ago
+----
+
+. Examine the `openshift-client` cluster task:
++
+[source,sh]
+----
+oc get clustertask openshift-client -o yaml
+----
++
+.Sample Output
+[source,texinfo]
+----
+apiVersion: tekton.dev/v1beta1
+kind: ClusterTask
+metadata:
+[..]
+  name: openshift-client
+[..]
+]spec:
+  params:
+  - default: oc $@
+    description: The OpenShift CLI arguments to run
+    name: SCRIPT
+    type: string
+  - default:
+    - help
+    description: The OpenShift CLI arguments to run
+    name: ARGS
+    type: array
+  resources:
+    inputs:
+    - name: source
+      optional: true
+      type: git
+  steps:
+  - args:
+    - $(params.ARGS)
+    image: image-registry.openshift-image-registry.svc:5000/openshift/cli:latest
+    name: oc
+    resources: {}
+    script: $(params.SCRIPT)
+----
++
+Note the following settings:
+
+* The task uses an image `image-registry.openshift-image-registry.svc:5000/openshift/cli:latest`
+* The task expects two parameters: `SCRIPT` and `ARGS`, both of which have defaults.
+* There is one optional resource, `source`. This can be used to clone a repository with YAML manifests first in case the task needs to create objects from YAML.
+* The task has one step, named `oc` that calls the OpenShift CLI image passing the parameter `SCRIPT`.
+
+. You can also create your own tasks in order to execute steps that have no pre-built task available.
++
+Create a new Task to apply k8s manifests to your cluster
++
+[source,sh]
+----
+cat << 'EOF' >$HOME/pipelines/task_apply_manifests.yaml
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: apply-manifests
+spec:
+  resources:
+    inputs:
+    - {type: git, name: source}
+  params:
+  - name: manifest_dir
+    description: The directory in source that contains yaml manifests
+    type: string
+    default: "k8s"
+  steps:
+  - name: apply
+    image: image-registry.openshift-image-registry.svc:5000/openshift/cli:latest
+    workingDir: /workspace/source
+    command: ["/bin/bash", "-c"]
+    args:
+    - |-
+      echo Applying manifests in $(inputs.params.manifest_dir) directory
+      oc apply -f $(inputs.params.manifest_dir)
+      echo -----------------------------------
+EOF
+----
+
+. Examine the task definition to understand what it does.
+. Create a second task that will update the container image in a deployment:
++
+[source,sh]
+----
+cat << 'EOF' >$HOME/pipelines/task_update_deployment.yaml
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: update-deployment
+spec:
+  resources:
+    inputs:
+    - {type: image, name: image}
+  params:
+  - name: deployment
+    description: The name of the deployment patch the image
+    type: string
+  steps:
+  - name: patch
+    image: image-registry.openshift-image-registry.svc:5000/openshift/cli:latest
+    command: ["/bin/bash", "-c"]
+    args:
+    - |-
+      oc patch deployment $(inputs.params.deployment) --patch='{"spec":{"template":{"spec":{
+        "containers":[{
+          "name": "$(inputs.params.deployment)",
+          "image":"$(inputs.resources.image.url)"
+        }]
+      }}}}'
+EOF
+----
+
+. Once again examine the task definition to understand how it works.
+. Create the two tasks:
++
+[source,sh]
+----
+oc create -f $HOME/pipelines/task_apply_manifests.yaml
+oc create -f $HOME/pipelines/task_update_deployment.yaml
+----
+
+. Validate that your tasks have been created:
++
+[source,sh]
+----
+tkn task ls
+----
++
+.Sample Output
+[source,texinfo]
+----
+NAME                AGE
+apply-manifests     5 seconds ago
+update-deployment   5 seconds ago
+----
+
+. Since tasks are Kubernetes resources you can also use the OpenShift CLI to validate your tasks have been created:
++
+[source,sh]
+----
+oc get tasks
+----
++
+.Sample Output
+[source,texinfo]
+----
+NAME                AGE
+apply-manifests     34s
+update-deployment   34s
+----
+
+== Create Pipeline
+
+In the next section you will create a Pipeline that uses the two tasks you created as well as the common `buildah` task to build the container image for the two applications.
+
+Pipelines, just like tasks, are designed to be reusable. You will only create one pipeline - and then use parameters to select which application to build and deploy.
+
+Here is a diagram of the pipeline that you will create.
+
+image::images/pipeline-diagram.png[width=100%]
+
+In the box on the right you see the pipeline with the following steps:
+
+* Using the `buildah` task clone the source code from Gogs, build the container image and push it to the OpenShift registry
+* Apply the Kubernetes manifests from the source code repository to create / update the application
+* Update the Deployment to use the recently built container image (which will trigger a redeploy of the application)
+
+. Create the Pipeline
++
+[source,sh]
+----
+cat << 'EOF' >$HOME/pipelines/pipeline.yaml
+apiVersion: tekton.dev/v1beta1
+kind: Pipeline
+metadata:
+  name: build-and-deploy
+spec:
+  resources:
+  - name: git-repo
+    type: git
+  - name: image
+    type: image
+  params:
+  - name: deployment-name
+    type: string
+    description: name of the deployment to be patched
+  tasks:
+  - name: build-image
+    taskRef:
+      name: buildah
+      kind: ClusterTask
+    resources:
+      inputs:
+      - name: source
+        resource: git-repo
+      outputs:
+      - name: image
+        resource: image
+    params:
+    - name: TLSVERIFY
+      value: "false"
+  - name: apply-manifests
+    taskRef:
+      name: apply-manifests
+    resources:
+      inputs:
+      - name: source
+        resource: git-repo
+    runAfter:
+    - build-image
+  - name: update-deployment
+    taskRef:
+      name: update-deployment
+    resources:
+      inputs:
+      - name: image
+        resource: image
+    params:
+    - name: deployment
+      value: $(params.deployment-name)
+    runAfter:
+    - apply-manifests
+EOF
+----
+
+. Examine the pipeline and note the following:
+.. You define two resources, a git repository and an image
+.. You might have noticed that there are no references to the actual git repository or image registry. That's because pipeline in Tekton are designed to be generic and re-usable across environments and stages through the application's lifecycle. Pipelines abstract away the specifics of the git source repository and image to be produced as PipelineResources.
+.. There is one parameter, the deployment name
+.. There are three tasks listed, with their inputs
+.. The execution order of task is determined by dependencies that are defined between the tasks via inputs and outputs as well as explicit orders that are defined via runAfter.
+
+. Create the pipeline:
++
+[source,sh]
+----
+oc create -f $HOME/pipelines/pipeline.yaml
+----
+
+. Check that the pipeline has been created:
++
+[source,sh]
+----
+tkn pipeline ls
+----
++
+.Sample Output
+[source,texinfo]
+----
+NAME               AGE              LAST RUN   STARTED   DURATION   STATUS
+build-and-deploy   37 seconds ago   ---        ---       ---        ---
+----
+
+== Validate the Pipeline in the OpenShift Console
+
+The OpenShift Pipelines Operator has also created a new section in the OpenShift Console to create, update and view pipelines. In this section you examine the pipeline from the web console.
+
+. Log into the OpenShift Web Console
+. Switch your perspective to the *Developer* perspective
+. Make sure you are in *your* project, `$GUID-pipeline`
+. Navigate to `Pipelines` on the left.
+. Explore your pipeline.
+. When you are finished leave the OpenShift web console open. You will use the Pipelines view in the Web Console in the next section to follow the execution of your pipeline.
+
+== Execute the Pipeline
+
+Before you can execute your pipeline you have to create the inputs and outputs for your pipelines. These are defined in `PipelineResource` objects.
+
+. Create a pipeline resource for your Gogs `vote-ui` repository:
++
+[source,sh]
+----
+export GOGS_ROUTE=$(oc get route gogs-gogs -n $GUID-gogs --template='http://{{.spec.host}}')
+
+echo "
+apiVersion: tekton.dev/v1alpha1
+kind: PipelineResource
+metadata:
+  name: ui-repo
+spec:
+  type: git
+  params:
+  - name: url
+    value: ${GOGS_ROUTE}/Pipeline/vote-ui.git
+" >$HOME/pipelines/pipeline_resource_gogs_vote_ui.yaml
+----
+
+. Create another pipeline resource for your Gogs `vote-api` repository:
++
+[source,sh]
+----
+echo "
+apiVersion: tekton.dev/v1alpha1
+kind: PipelineResource
+metadata:
+  name: api-repo
+spec:
+  type: git
+  params:
+  - name: url
+    value: ${GOGS_ROUTE}/Pipeline/vote-api.git
+" >$HOME/pipelines/pipeline_resource_gogs_vote_api.yaml
+----
++
+Note how you are setting the url to the specific URL of your Gogs repository.
+
+. Create a third pipeline resource for the built ui container image:
++
+[source,sh]
+----
+echo "
+apiVersion: tekton.dev/v1alpha1
+kind: PipelineResource
+metadata:
+  name: ui-image
+spec:
+  type: image
+  params:
+  - name: url
+    value: image-registry.openshift-image-registry.svc:5000/$GUID-pipeline/vote-ui:latest
+" >$HOME/pipelines/pipeline_resource_image_vote_ui.yaml
+----
+
+. And finally create a pipeline resource for the built api container image:
++
+[source,sh]
+----
+echo "
+apiVersion: tekton.dev/v1alpha1
+kind: PipelineResource
+metadata:
+  name: api-image
+spec:
+  type: image
+  params:
+  - name: url
+    value: image-registry.openshift-image-registry.svc:5000/$GUID-pipeline/vote-api:latest
+" >$HOME/pipelines/pipeline_resource_image_vote_api.yaml
+----
+
+. Now create all four pipeline resources:
++
+[source,sh]
+----
+oc create -f $HOME/pipelines/pipeline_resource_gogs_vote_ui.yaml
+oc create -f $HOME/pipelines/pipeline_resource_gogs_vote_api.yaml
+oc create -f $HOME/pipelines/pipeline_resource_image_vote_ui.yaml
+oc create -f $HOME/pipelines/pipeline_resource_image_vote_api.yaml
+----
+
+. And validate that they are all there:
++
+[source,sh]
+----
+tkn resource ls
+----
++
+.Sample Output
+[source,texinfo,options="nowrap"]
+----
+NAME        TYPE    DETAILS
+api-repo    git     url: http://http://gogs-gogs-a4c4-gogs.apps.cluster-navilt.navilt.example.opentlc.com/Pipeline/vote-api.git
+ui-repo     git     url: http://http://gogs-gogs-a4c4-gogs.apps.cluster-navilt.navilt.example.opentlc.com/Pipeline/vote-ui.git
+api-image   image   url: image-registry.openshift-image-registry.svc:5000/a4c4-pipeline/vote-api:latest
+ui-image    image   url: image-registry.openshift-image-registry.svc:5000/a4c4-pipeline/vote-ui:latest
+----
+
+. You are now ready to run your pipeline for the first time.
++
+In order to run the pipeline you need to create a pipeline run that is binding the pipeline resources to your pieline.
++
+Create a `PipelineRun` by using the `tkn` command to start the pipeline `build-and-deploy` passing the necessary resources (`-r`) and parameters (`-p`):
++
+[source,sh]
+----
+tkn pipeline start build-and-deploy \
+    -r git-repo=api-repo \
+    -r image=api-image \
+    -p deployment-name=vote-api
+----
++
+.Sample Output
+[source,texinfo]
+----
+Pipelinerun started: build-and-deploy-run-l52wd
+
+In order to track the pipelinerun progress run:
+tkn pipelinerun logs build-and-deploy-run-l52wd -f -n a4c4-pipeline
+----
+
+. Validate that your pipeline is running (you can also check the OpenShift web console):
++
+[source,sh]
+----
+tkn pipeline list
+----
++
+.Sample Output
+[source,texinfo]
+----
+NAME               AGE              LAST RUN                     STARTED          DURATION   STATUS
+build-and-deploy   21 minutes ago   build-and-deploy-run-wj26p   19 seconds ago   ---        Running
+----
+
+. Follow the logs of the pipeline (if you have more than one pipeline running tkn will ask you for which pipeline run you want to tail the logs):
++
+[source,sh]
+----
+tkn pipeline logs -f 
+----
++
+.Sample Output
+[source,texinfo]
+----
+[build-image : git-source-api-repo-6gtwh] {"level":"info","ts":1591297908.8857565,"caller":"git/git.go:105","msg":"Successfully cloned http://gogs-gogs-a4c4-gogs.apps.cluster-navilt.navilt.example.opentlc.com/Pipeline/vote-api.git @ master in path /workspace/source"}
+[build-image : git-source-api-repo-6gtwh] {"level":"warn","ts":1591297908.885824,"caller":"git/git.go:152","msg":"Unexpected error: creating symlink: symlink /tekton/home/.ssh /root/.ssh: file exists"}
+
+[...]
+
+[build-image : build] STEP 1: FROM golang:alpine AS builder
+[build-image : build] Getting image source signatures
+
+[...]
+
+build-image : push] Getting image source signatures
+[build-image : push] Copying blob sha256:2da4a4a49c06b6400fd23a96be0d9b90cc0bf2341303aac1f015afe4882f9157
+
+[...]
+
+[apply-manifests : git-source-api-repo-ckx7l] {"level":"info","ts":1591297959.729658,"caller":"git/git.go:105","msg":"Successfully cloned http://gogs-gogs-a4c4-gogs.apps.cluster-navilt.navilt.example.opentlc.com/Pipeline/vote-api.git @ master in path /workspace/source"}
+[apply-manifests : git-source-api-repo-ckx7l] {"level":"info","ts":1591297959.7956636,"caller":"git/git.go:133","msg":"Successfully initialized and updated submodules in path /workspace/source"}
+
+[apply-manifests : apply] Applying manifests in k8s directory
+[apply-manifests : apply] deployment.apps/vote-api created
+[apply-manifests : apply] service/vote-api created
+[apply-manifests : apply] -----------------------------------
+
+[update-deployment : patch] deployment.apps/vote-api patched
+----
+
+. Once the pipeline finishes double check that your application is running:
++
+[source,sh]
+----
+oc get pod
+----
++
+.Sample Output
+[source,texinfo,options="nowrap"]
+----
+NAME                                                           READY   STATUS      RESTARTS   AGE
+build-and-deploy-run-wj26p-apply-manifests-895lv-pod-d88zs     0/2     Completed   0          119s
+build-and-deploy-run-wj26p-build-image-s6l7t-pod-st6gr         0/5     Completed   0          3m24s
+build-and-deploy-run-wj26p-update-deployment-k8cbs-pod-bqpxj   0/1     Completed   0          99s
+vote-api-68d8d7fdb-w9vjw                                       1/1     Running     0          92s
+----
++
+Note the following:
+
+* Your `vote-api` pod is now running
+* You have three other, completed, pods. These were the three tasks in your pipeline: *build image*, *apply manifests* and *update deployment*.
+* The tasks get executed as pods - and each step in a task gets executed in its own container. You can tell that the *build image* task had 5 steps.
+
+. Now build the second application. You will use the exact same pipeline - but with different inputs (resources and parameters):
++
+[source,sh]
+----
+tkn pipeline start build-and-deploy \
+    -r git-repo=ui-repo \
+    -r image=ui-image \
+    -p deployment-name=vote-ui
+----
++
+.Sample Output
+[source,texinfo]
+----
+Pipelinerun started: build-and-deploy-run-b8rw8
+
+In order to track the pipelinerun progress run:
+tkn pipelinerun logs build-and-deploy-run-b8rw8 -f -n a4c4-pipeline
+----
+
+. Once again tail the logs of your pipeline run.
+. Once the pipeline run has finished double check that your second application is running as well:
++
+[source,sh]
+----
+oc get pod
+----
++
+.Sample Output
+[source,texinfo]
+----
+NAME                                                           READY   STATUS        RESTARTS   AGE
+build-and-deploy-run-b8rw8-apply-manifests-h9xzb-pod-9h74n     0/2     Completed     0          42s
+build-and-deploy-run-b8rw8-build-image-8gmtt-pod-95cjm         0/5     Completed     0          105s
+build-and-deploy-run-b8rw8-update-deployment-fh5xk-pod-hhc9f   0/1     Completed     0          15s
+build-and-deploy-run-wj26p-apply-manifests-895lv-pod-d88zs     0/2     Completed     0          6m47s
+build-and-deploy-run-wj26p-build-image-s6l7t-pod-st6gr         0/5     Completed     0          8m12s
+build-and-deploy-run-wj26p-update-deployment-k8cbs-pod-bqpxj   0/1     Completed     0          6m27s
+vote-api-68d8d7fdb-w9vjw                                       1/1     Running       0          6m20s
+vote-ui-c867566c5-6jx7j                                        1/1     Running       0          8s
+----
++
+You see the pods that made up the second pipeline run. And you see the `vote-ui` pod.
+
+. Retrieve the route to your application:
++
+[source,sh]
+----
+oc get route vote-ui --template='http://{{.spec.host}}'
+----
++
+.Sample Output
+[source,texinfo]
+----
+http://vote-ui-a4c4-pipeline.apps.cluster-navilt.navilt.example.opentlc.com
+----
+
+. In your web browser navigate to the route to see the application in action.
+
+== Adding Triggers to your Pipeline
+
+Triggers enable us to configure pipelines to respond to external events (github push events, pull requests etc).
+
+Adding triggering support requires the creation of a *TriggerTemplate*, *TriggerBinding*, and an *EventListener* in our project.
+
+A trigger template is a template for newly created resources. It supports parameters to create specific pipeline resources and pipeline runs. The parameters are later set via a trigger binding.
+
+. Create a trigger template called `vote-app`:
++
+[source,sh]
+----
+cat << 'EOF' >$HOME/pipelines/trigger_template.yaml
+apiVersion: triggers.tekton.dev/v1alpha1
+kind: TriggerTemplate
+metadata:
+  name: vote-app
+spec:
+  params:
+  - name: git-repo-url
+    description: The git repository url
+  - name: git-revision
+    description: The git revision
+    default: master
+  - name: git-repo-name
+    description: The name of the deployment to be created / patched
+
+  resourcetemplates:
+  - apiVersion: tekton.dev/v1alpha1
+    kind: PipelineResource
+    metadata:
+      name: $(params.git-repo-name)-git-repo-$(uid)
+    spec:
+      type: git
+      params:
+      - name: revision
+        value: $(params.git-revision)
+      - name: url
+        value: $(params.git-repo-url)
+
+  - apiVersion: tekton.dev/v1alpha1
+    kind: PipelineResource
+    metadata:
+      name: $(params.git-repo-name)-image-$(uid)
+    spec:
+      type: image
+      params:
+      - name: url
+        value: image-registry.openshift-image-registry.svc:5000/GUID-pipeline/$(params.git-repo-name):latest
+
+  - apiVersion: tekton.dev/v1beta1
+    kind: PipelineRun
+    metadata:
+      name: build-deploy-$(params.git-repo-name)-$(uid)
+    spec:
+      serviceAccountName: pipeline
+      pipelineRef:
+        name: build-and-deploy
+      resources:
+      - name: git-repo
+        resourceRef:
+          name: $(params.git-repo-name)-git-repo-$(uid)
+      - name: image
+        resourceRef:
+          name: $(params.git-repo-name)-image-$(uid)
+      params:
+      - name: deployment-name
+        value: $(params.git-repo-name)
+EOF
+----
++
+Note the following in this template:
+
+* The trigger template is generic. You can use the same trigger template for the `vote-api` and `vote-ui` applications.
+* The template expects three parameters: `git-repo-url`, `git-revision` and `git-repo-name`. These parameters will be set by the trigger binding that we will create next.
+* It creates two pipeline resources, one of type git that points to the repository that triggered the event. The other one points to the container image to be built (which has the same name as your repository)
+* It creates a pipeline run that uses the generic pipeline `build-and-deploy` and binds the newly created resources for our repo and image.
+* Finally it sets the `deployment-name` variable to the name of the repository that triggered the build.
+
+. Replace the GUID placeholder in the file with your actual GUID:
++
+[source,sh]
+----
+sed -i "s/GUID/${GUID}/g" $HOME/pipelines/trigger_template.yaml
+----
+
+. A trigger binding is a map that enables you to capture fields from an event and store them as parameters, and replace them in a trigger template whenever an event occurs.
+
+. Every time the event is triggered Gogs will call the URL of your event listener and pass information via JSON data.
++
+Examine an example JSON payload from Gogs:
++
+[source,sh]
+----
+{
+  "ref": "refs/heads/master",
+  "before": "ff6292bba87d7858b02d92e12c6ba4a6474ce8aa",
+  "after": "709dcb4f1564f85303528a80dcf3110122bc5ffb",
+  "compare_url": "https://gogs-gogs-a4c4-gogs.apps.cluster-navilt.navilt.example.opentlc.com/Pipeline/vote-ui/compare/ff6292bba87d7858b02d92e12c6ba4a6474ce8aa...709dcb4f1564f85303528a80dcf3110122bc5ffb",
+  "commits": [
+    {
+      "id": "709dcb4f1564f85303528a80dcf3110122bc5ffb",
+      "message": "Added line to README\n",
+      "url": "https://gogs-gogs-a4c4-gogs.apps.cluster-navilt.navilt.example.opentlc.com/Pipeline/vote-ui/commit/709dcb4f1564f85303528a80dcf3110122bc5ffb",
+      "author": {
+        "name": "GTPE Student",
+        "email": "wkulhane-redhat.com@studentvm.a4c4.internal",
+        "username": ""
+      },
+      "committer": {
+        "name": "GTPE Student",
+        "email": "wkulhane-redhat.com@studentvm.a4c4.internal",
+        "username": ""
+      },
+      "added": [],
+      "removed": [],
+      "modified": [
+        "README.md"
+      ],
+      "timestamp": "2020-06-04T19:52:34Z"
+    }
+  ],
+  "repository": {
+    "id": 2,
+    "owner": {
+      "id": 2,
+      "username": "Pipeline",
+      "login": "Pipeline",
+      "full_name": "",
+      "email": "",
+      "avatar_url": "https://gogs-gogs-a4c4-gogs.apps.cluster-navilt.navilt.example.opentlc.com/avatars/2"
+    },
+    "name": "vote-ui",
+    "full_name": "Pipeline/vote-ui",
+    "description": "",
+    "private": false,
+    "fork": false,
+    "parent": null,
+    "empty": false,
+    "mirror": false,
+    "size": 161792,
+    "html_url": "https://gogs-gogs-a4c4-gogs.apps.cluster-navilt.navilt.example.opentlc.com/Pipeline/vote-ui",
+    "ssh_url": "gogs@localhost:Pipeline/vote-ui.git",
+    "clone_url": "https://gogs-gogs-a4c4-gogs.apps.cluster-navilt.navilt.example.opentlc.com/Pipeline/vote-ui.git",
+    "website": "",
+    "stars_count": 0,
+    "forks_count": 0,
+    "watchers_count": 2,
+    "open_issues_count": 0,
+    "default_branch": "master",
+    "created_at": "2020-06-04T17:24:42Z",
+    "updated_at": "2020-06-04T19:44:36Z"
+  },
+  "pusher": {
+    "id": 1,
+    "username": "wkulhanek",
+    "login": "wkulhanek",
+    "full_name": "",
+    "email": "wkulhane@redhat.com",
+    "avatar_url": "https://secure.gravatar.com/avatar/fb292409503d54632215e5c109f4ede4"
+  },
+  "sender": {
+    "id": 1,
+    "username": "wkulhanek",
+    "login": "wkulhanek",
+    "full_name": "",
+    "email": "wkulhane@redhat.com",
+    "avatar_url": "https://secure.gravatar.com/avatar/fb292409503d54632215e5c109f4ede4"
+  }
+}
+----
++
+* You will need the following values from the payload - `body` is the top level path to be used in path queries:
+** URL of the repository (because the task will need to clone the repository): `body.repository.html_url`
+** Commit ID (because that is the exact version of the repository to be checked out): `body.after`
+** Name of the repository (because that maps onto the image name as well as the application name): `body.repository.name`
+. Create a trigger binding:
++
+[source,sh]
+----
+cat << 'EOF' >$HOME/pipelines/trigger_binding.yaml
+apiVersion: triggers.tekton.dev/v1alpha1
+kind: TriggerBinding
+metadata:
+  name: vote-app
+spec:
+  params:
+  - name: git-repo-url
+    value: $(body.repository.html_url)
+  - name: git-repo-name
+    value: $(body.repository.name)
+  - name: git-revision
+    value: $(body.after)
+EOF
+----
++
+The exact variables for the values that we need can be found by examining the event payload (eg: GitHub events). In this example we set the parameter `git-repo-url` to the value `body.repository.html_url` from the JSON payload. Compare the rest of the fields to the example payload from above.
+
+. An event listener sets up a service and listens for events. It also connects a trigger template to a trigger binding.
++
+Create the event listener:
++
+[source,sh]
+----
+cat << 'EOF' >$HOME/pipelines/event_listener.yaml
+apiVersion: triggers.tekton.dev/v1alpha1
+kind: EventListener
+metadata:
+  name: vote-app
+spec:
+  serviceAccountName: pipeline
+  triggers:
+  - bindings:
+    - name: vote-app
+    template:
+      name: vote-app
+EOF
+----
++
+Notice how the Event Listener uses the trigger binding `vote-app` and the trigger template `vote-app`. This means that every time an event is received the trigger template `vote-app` is being instantiated with the values from the trigger binding. And this creates both the pipeline resources as well as the pipeline run.
+
+. Now create the trigger template, trigger binding and event listener:
++
+[source,sh]
+----
+oc create -f $HOME/pipelines/trigger_template.yaml
+oc create -f $HOME/pipelines/trigger_binding.yaml
+oc create -f $HOME/pipelines/event_listener.yaml
+----
+
+. Validate that the event listener has indeed created a service:
++
+[source,sh]
+----
+oc get svc
+----
++
+.Sample Output
+[source,texinfo]
+----
+NAME          TYPE        CLUSTER-IP       EXTERNAL-IP   PORT(S)          AGE
+el-vote-app   ClusterIP   172.30.171.242   <none>        8080/TCP         3s
+vote-api      ClusterIP   172.30.96.18     <none>        9000/TCP         22m
+vote-ui       NodePort    172.30.8.124     <none>        8080:30183/TCP   16m
+----
+
+. Expose the event listener service as a route so that it can be called from outside of the OpenShift Cluster (even though we could have used the service because Gogs is on the same cluster as the pipeline):
++
+[source,sh]
+----
+oc expose svc el-vote-app
+----
+
+. Retrieve the URL for the event listener:
++
+[source,sh]
+----
+oc get route el-vote-app --template='http://{{.spec.host}}'
+----
++
+.Sample Output
+[source,texinfo]
+----
+http://el-vote-app-a4c4-pipeline.apps.cluster-navilt.navilt.example.opentlc.com
+----
+
+== Set up Web Hook in Gogs
+
+Now that everything is prepared on the OpenShift pipelines side it is time to configure Gogs to call the web hook whenever code gets pushed into the repository.
+
+. Log back into your Gogs instance
+. Navigate to the `vote-ui` repository.
+. Click *Settings* to configure the repository
+. Click *Webhooks* in the navigation area on the left
+. Click the blue *Add Webhook* button and select *Gogs* as the type of Web Hook to create.
+.. Use the route of your event listener as the *Payload URL*
+.. Leave Content Type as *application/json*
+.. And set the secret to whatever you like, e.g. *12345678*
+.. Click the green *Add Webhook* button to finish.
+
+== Trigger Web Hook
+
+You will now make a change to the repository on your student VM and push that change to the repository. This push will trigger the webhook and therefore start another pipeline run.
+
+. Switch to your `vote-ui` directory:
++
+[source,sh]
+----
+cd $HOME/pipelines/vote-ui
+----
+
+. Add a line to your *README.md* file:
++
+[source,sh]
+----
+echo "Added a line to the README" >> ./README.md
+----
+
+. Commit and push the file to the repo:
++
+[source,sh]
+----
+git commit -m "Added line to README" README.md
+git push gogs
+----
+
+. Check that your pipeline is running:
++
+[source,sh]
+----
+tkn pipelines ls
+----
++
+.Sample Output
+[source,texinfo]
+----
+NAME               AGE          LAST RUN                     STARTED          DURATION   STATUS
+build-and-deploy   1 hour ago   build-deploy-vote-ui-jqzd4   39 seconds ago   ---        Running
+----
++
+[TIP]
+If your pipeline is not running after a few seconds you can check the pod logs of your event listener pod to see if there are any error messages - for example mismatched variables.
+
+. Back in Gogs navigate back to your web hooks page where you can see *Recent Deliveries*. If you click on the blue line it will open details on the request - including the full JSON payload. This can be useful for debugging and examining what fields are available for you to use in your trigger binding.
+
+== Wrapup
+
+You have created a simple, three step, pipeline using one existing and two custom tasks.
+
+You tested the generic pipeline by adding pipeline resources and using these pipeline resources in a pipeline run to execute your generic pipeline twice - for two different applications from two different repositories
+
+And finally you set up triggering so that every push to the repository will trigger a Pipeline Run.
