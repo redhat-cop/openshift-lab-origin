@@ -456,11 +456,10 @@ oc create -f config/samples/gitea-server.yaml -n gitea
 +
 Should you get permission errors make sure you double check the `role.yaml`.
 
-. If you need to change the role you can undeploy and redeploy the operator:
+. If you need to change the role you can just redeploy the operator:
 +
 [source,sh]
 ----
-make undeploy IMG=quay.io/$QUAY_ID/gitea-operator:v0.0.1
 make deploy IMG=quay.io/$QUAY_ID/gitea-operator:v0.0.1
 ----
 
@@ -636,12 +635,12 @@ podman push quay.io/$QUAY_ID/gitea-catalog:latest
 echo "apiVersion: operators.coreos.com/v1alpha1
 kind: CatalogSource
 metadata:
-  name: gitea
+  name: redhat-gpte
   namespace: openshift-marketplace
 spec:
   sourceType: grpc
   image: quay.io/$QUAY_ID/gitea-catalog:latest
-  displayName: Gitea" > catalog_source.yaml
+  displayName: Red Hat GPTE" > catalog_source.yaml
 ----
 
 . Create the Catalog Source in the cluster
@@ -659,4 +658,3 @@ oc create -f catalog_source.yaml
 
 * CRD enhancements for oc explain
 * Add icon and better description to Operator in Operator Hub
-     
