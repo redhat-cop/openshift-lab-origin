@@ -5,7 +5,7 @@
 [NOTE]
 The following instructions have been written for RHEL 8. But this entire process also works on macOS - and where appropriate the necessary adjustments and commands have been provided.
 
-In order to build an operator you need to install the Operator SDK binaries on your machine. The current release is 1.0.0 Alpha 1 (as of 2020/07/30). In order to follow this lab it is recommended you stick to this release as future updates may break the process. This lab will be updated on a best effort basis up to version 1.0.
+In order to build an operator you need to install the Operator SDK binaries on your machine. The current release is 1.0.0 Alpha 2 (as of 2020/08/03). In order to follow this lab it is recommended you stick to this release as future updates may break the process. This lab will be updated on a best effort basis up to version 1.0.
 
 . Install the Operator SDK on your machine:
 +
@@ -580,7 +580,7 @@ podman build -f bundle.Dockerfile -t quay.io/wkulhanek/gitea-operator-bundle:v0.
 [source,sh]
 ----
 podman push quay.io/wkulhanek/gitea-operator-bundle:v0.1.0
-operator-sdk bundle validate quay.io/wkulhanek/gitea-operator-bundle:v0.1.0
+operator-sdk bundle validate quay.io/wkulhanek/gitea-operator-bundle:v0.1.0 -b podman 
 ----
 
 . The next step is to create a catalog index image. There is a dedicated tool that helps with adding bundle images into an index image.
