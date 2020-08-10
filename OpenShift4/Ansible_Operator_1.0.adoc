@@ -1,4 +1,4 @@
-= Building and publishing a Gitea Operator using the Ansible Operator SDK 1.0 (alpha 1)
+= Building and publishing a Gitea Operator using the Ansible Operator SDK 1.0 (alpha 2)
 
 == Install Operator SDK
 
@@ -45,6 +45,10 @@ You may need to install `virtualenv` on a system level first using `pip3 install
 +
 [source,sh]
 ----
+# For Linux (RHEL 8) only
+sudo yum -y install gcc python3-devel virtualenv make
+
+# For all platforms
 virtualenv -p $(which python3) ~/virtualenvs/ansible-operator
 source ~/virtualenvs/ansible-operator/bin/activate
 pip install -U pip
@@ -401,30 +405,30 @@ docker build . -t quay.io/wkulhanek/gitea-operator:v0.0.1
 STEP 1: FROM quay.io/operator-framework/ansible-operator:v1.0.0-alpha.2
 Getting image source signatures
 Copying blob 47db82df7f3f done
-Copying blob 0a7116fa49cf done
 Copying blob 77c58f19bd6e done
+Copying blob 0a7116fa49cf done
 Copying blob 280c46b716aa done
-Copying blob bc948542ae1b done
 Copying blob 44c2ae303bf0 done
+Copying blob bc948542ae1b done
 Copying blob bcb9e7c77030 done
 Copying config 4e28d359ac done
 Writing manifest to image destination
 Storing signatures
 STEP 2: COPY requirements.yml ${HOME}/requirements.yml
-56c2b68924776e672d01612aad1c9aeff8ee39f23b596a661ea855572c03f2aa
+53b2db0347a493da685ce8714155ed6b69378141defaf1f5dad2b8d06bf94b3b
 STEP 3: RUN ansible-galaxy collection install -r ${HOME}/requirements.yml  && chmod -R ug+rwx ${HOME}/.ansible
 Process install dependency map
 Starting collection install process
 Installing 'community.kubernetes:0.11.1' to '/opt/ansible/.ansible/collections/ansible_collections/community/kubernetes'
 Installing 'operator_sdk.util:0.0.0' to '/opt/ansible/.ansible/collections/ansible_collections/operator_sdk/util'
-03c8c778415043f98095c23747073527b7e5fe7c84ef34521d091bc7136f546f
+5ffdd6976c97d3955a3b08ab2796890b156aad6c3edc79ff15d9f9e4798be0f1
 STEP 4: COPY watches.yaml ${HOME}/watches.yaml
-f97715a353fda42abcad65015b855e833264a81077d370ead32fd268536145f2
+b4148b14bd788c8e50285f60bf19debb6c0ad3b2961d2a0702b1e664a89da7b8
 STEP 5: COPY roles/ ${HOME}/roles/
-79f4aec7713c17a3162e8088fce597ed6a64841cfdd433a0a2b12d7b1e921ffd
+b79ff49fe4f05ef0a30ce844c7951eb2bb0ccd7036ad34c7918216c9740f7178
 STEP 6: COPY playbooks/ ${HOME}/playbooks/
 STEP 7: COMMIT quay.io/wkulhanek/gitea-operator:v0.0.1
-7105bb2197d6575d6efd9e0d2dfbd840331a7a80ebf1de054aca49df3f21b0cb
+1e9784e0d013e06b02c60737791d20973a626b6995aa1b2968dda7b9e66e063b
 ----
 
 . Push the image to the registry:
@@ -572,15 +576,15 @@ INFO[0000] All validation tests have completed successfully
 +
 [source,sh]
 ----
-podman build -f bundle.Dockerfile -t quay.io/wkulhanek/gitea-operator-bundle:v0.1.0 .
+podman build -f bundle.Dockerfile -t quay.io/$QUAY_ID/gitea-operator-bundle:v0.0.1 .
 ----
 
 . Push the bundle image to the Quay registry and then validate that it looks correct (on macOS use `docker` instead of `podman`).
 +
 [source,sh]
 ----
-podman push quay.io/wkulhanek/gitea-operator-bundle:v0.1.0
-operator-sdk bundle validate quay.io/wkulhanek/gitea-operator-bundle:v0.1.0 -b podman 
+podman push quay.io/$QUAY_ID/gitea-operator-bundle:v0.0.1
+operator-sdk bundle validate quay.io/$QUAY_ID/gitea-operator-bundle:v0.0.1 -b podman 
 ----
 
 . The next step is to create a catalog index image. There is a dedicated tool that helps with adding bundle images into an index image.
@@ -593,7 +597,7 @@ Download and install the `opm` tool:
 curl -L https://github.com/operator-framework/operator-registry/releases/download/v1.12.3/linux-amd64-opm -o ./opm
 chmod +x ./opm
 sudo chown root:root ./opm
-mv opm /usr/local/bin/opm
+sudo mv opm /usr/local/bin/opm
 ----
 +
 .macOS
@@ -638,39 +642,39 @@ On macOS you need to add the parameter `--build-tool docker` because `podman` do
 [source,sh]
 ----
 opm index add \
-    --bundles quay.io/$QUAY_ID/gitea-operator-bundle:v0.1.0 \
-    --tag quay.io/$QUAY_ID/gitea-catalog:latest
+    --bundles quay.io/$QUAY_ID/gitea-operator-bundle:v0.0.1 \
+    --tag quay.io/$QUAY_ID/gitea-catalog:v0.0.1
 ----
 +
 .Sample Output
 [source,texinfo]
 ----
-INFO[0000] building the index                            bundles="[quay.io/wkulhanek/gitea-operator-bundle:v0.1.0]"
-INFO[0000] resolved name: quay.io/wkulhanek/gitea-operator-bundle:v0.1.0
-INFO[0000] fetched                                       digest="sha256:9562590fac1c04e3fe8045acecd7343b5cd554bfe9a67ea81921dc11249b5984"
-INFO[0000] fetched                                       digest="sha256:652a70cf08ef58af7d8719250007729b5aafbc963bf56a7c8d209b444dfdeff5"
-INFO[0000] fetched                                       digest="sha256:0d896566e847dbf94b4b441a91215d5207751e05d4e021a487f11416c890e639"
-INFO[0000] fetched                                       digest="sha256:ec6ce27a995682134bc941630d9068c8e18e9411084e71cd7bb78109e7e5c724"
-INFO[0000] fetched                                       digest="sha256:3f924f56a4e06070c910e8322865ece1b8fc41f64de3113f4d1f5c2c3b1d35ee"
-INFO[0000] unpacking layer: {application/vnd.docker.image.rootfs.diff.tar.gzip sha256:652a70cf08ef58af7d8719250007729b5aafbc963bf56a7c8d209b444dfdeff5 2206 [] map[] <nil>}
-INFO[0000] unpacking layer: {application/vnd.docker.image.rootfs.diff.tar.gzip sha256:ec6ce27a995682134bc941630d9068c8e18e9411084e71cd7bb78109e7e5c724 383 [] map[] <nil>}
-INFO[0000] unpacking layer: {application/vnd.docker.image.rootfs.diff.tar.gzip sha256:0d896566e847dbf94b4b441a91215d5207751e05d4e021a487f11416c890e639 448 [] map[] <nil>}
-INFO[0000] Could not find optional dependencies file     dir=bundle_tmp616545949 file=bundle_tmp616545949/metadata load=annotations
-INFO[0000] found csv, loading bundle                     dir=bundle_tmp616545949 file=bundle_tmp616545949/manifests load=bundle
-INFO[0000] loading bundle file                           dir=bundle_tmp616545949/manifests file=gitea-operator-metrics-reader_rbac.authorization.k8s.io_v1beta1_clusterrole.yaml load=bundle
-INFO[0000] loading bundle file                           dir=bundle_tmp616545949/manifests file=gitea-operator.clusterserviceversion.yaml load=bundle
-INFO[0000] loading bundle file                           dir=bundle_tmp616545949/manifests file=gpte.opentlc.com_giteas.yaml load=bundle
-INFO[0000] Generating dockerfile                         bundles="[quay.io/wkulhanek/gitea-operator-bundle:v0.1.0]"
-INFO[0000] writing dockerfile: index.Dockerfile813880307  bundles="[quay.io/wkulhanek/gitea-operator-bundle:v0.1.0]"
-INFO[0000] running podman build                          bundles="[quay.io/wkulhanek/gitea-operator-bundle:v0.1.0]"
-INFO[0000] [podman build --format docker -f index.Dockerfile813880307 -t quay.io/wkulhanek/gitea-catalog:latest .]  bundles="[quay.io/wkulhanek/gitea-operator-bundle:v0.1.0]"
+INFO[0000] building the index                            bundles="[quay.io/wkulhanek/gitea-operator-bundle:v0.0.1]"
+INFO[0000] resolved name: quay.io/wkulhanek/gitea-operator-bundle:v0.0.1
+INFO[0000] fetched                                       digest="sha256:c060e1700b5b669aa754b9de4aae34f3d83489a6cdc15d94219f347306ed58f1"
+INFO[0000] fetched                                       digest="sha256:9e24e729c223e03a1fa40b8a42f18a55831a4fed621c52e5f17380f081cfc6ca"
+INFO[0000] fetched                                       digest="sha256:ae3b83fbf9e89e6820a316063384c9c9b0df9a152ce421b07aaa060db14acbef"
+INFO[0000] fetched                                       digest="sha256:9eb2e26e8dc5e71746e6b76073286242b162ad0deb845611de5062b32477b8e6"
+INFO[0000] fetched                                       digest="sha256:f21411d91e8a4025fe9c2eef6a0b10497a6d96ca5378f1c102f47c0b98a08d30"
+INFO[0000] unpacking layer: {application/vnd.docker.image.rootfs.diff.tar.gzip sha256:9eb2e26e8dc5e71746e6b76073286242b162ad0deb845611de5062b32477b8e6 2196 [] map[] <nil>}
+INFO[0000] unpacking layer: {application/vnd.docker.image.rootfs.diff.tar.gzip sha256:ae3b83fbf9e89e6820a316063384c9c9b0df9a152ce421b07aaa060db14acbef 383 [] map[] <nil>}
+INFO[0000] unpacking layer: {application/vnd.docker.image.rootfs.diff.tar.gzip sha256:9e24e729c223e03a1fa40b8a42f18a55831a4fed621c52e5f17380f081cfc6ca 451 [] map[] <nil>}
+INFO[0000] Could not find optional dependencies file     dir=bundle_tmp707056163 file=bundle_tmp707056163/metadata load=annotations
+INFO[0000] found csv, loading bundle                     dir=bundle_tmp707056163 file=bundle_tmp707056163/manifests load=bundle
+INFO[0000] loading bundle file                           dir=bundle_tmp707056163/manifests file=gitea-operator-metrics-reader_rbac.authorization.k8s.io_v1beta1_clusterrole.yaml load=bundle
+INFO[0000] loading bundle file                           dir=bundle_tmp707056163/manifests file=gitea-operator.clusterserviceversion.yaml load=bundle
+INFO[0000] loading bundle file                           dir=bundle_tmp707056163/manifests file=gpte.opentlc.com_giteas.yaml load=bundle
+INFO[0000] Generating dockerfile                         bundles="[quay.io/wkulhanek/gitea-operator-bundle:v0.0.1]"
+INFO[0000] writing dockerfile: index.Dockerfile143832329  bundles="[quay.io/wkulhanek/gitea-operator-bundle:v0.0.1]"
+INFO[0000] running podman build                          bundles="[quay.io/wkulhanek/gitea-operator-bundle:v0.0.1]"
+INFO[0000] [podman build -f index.Dockerfile143832329 -t quay.io/wkulhanek/gitea-catalog:v0.0.1 .]  bundles="[quay.io/wkulhanek/gitea-operator-bundle:v0.0.1]"
 ----
 
 . Push the catalog image to the Quay repository (on macOS use `docker` instead of `podman`):
 +
 [source,sh]
 ----
-podman push quay.io/$QUAY_ID/gitea-catalog:latest
+podman push quay.io/$QUAY_ID/gitea-catalog:v0.0.1
 ----
 
 . Make sure that the repos `gitea-catalog`, `gitea-operator-bundle` and `gitea-operator` in your Quay account are public.
@@ -686,7 +690,7 @@ metadata:
   namespace: openshift-marketplace
 spec:
   sourceType: grpc
-  image: quay.io/$QUAY_ID/gitea-catalog:latest
+  image: quay.io/$QUAY_ID/gitea-catalog:v0.0.1
   displayName: Red Hat GPTE" > $HOME/gitea-operator/catalog_source.yaml
 ----
 
@@ -701,7 +705,52 @@ oc create -f $HOME/gitea-operator/catalog_source.yaml
 
 . You can now deploy the operator from the Operator Hub.
 
+
 == TBD:
 
 * CRD enhancements for oc explain
 * Add icon and better description to Operator in Operator Hub
+
+////
++
+[source,sh]
+----
+wget https://github.com/go-gitea/gitea/raw/master/assets/logo.svg
+----
+
+Convert from svg to png and base64 encode
++
+[source,sh]
+----
+pip3 install cairosvg
+cairosvg -H 300 -W 300 -f png -o gitea.png logo.svg
+base64 gitea.png > gitea-base64.png
+----
+
+Main kustomization file: gitea-operator/config/defaults/kustomization.yaml
+
+CRD: $HOME/gitea-operator/config/crd/bases/gpte.opentlc.com_giteas.yaml
+Kustomzation: $HOME/gitea-operator/config/crd/kustomization.yaml
+
+Manifests:
+Kustomization: $HOME/gitea-operator/config/manifests/kustomization.yaml
+CSV: $HOME/gitea-operator/config/manifests/bases/gitea-operator.clusterserviceversion.yaml
+
+
+
+=== Works
+Update the Sample to be displayed when creating a Gitea from OLM:
+
+[source,sh]
+----
+echo "apiVersion: gpte.opentlc.com/v1alpha1
+kind: Gitea
+metadata:
+  name: repository
+spec:
+  postgresqlVolumeSize: 4Gi
+  giteaVolumeSize: 4Gi
+  giteaSsl: True" > $HOME/gitea-operator/config/samples/gpte_v1alpha1_gitea.yaml
+----
+Update bundle with `make bundle`
+////
