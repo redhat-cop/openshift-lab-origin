@@ -720,6 +720,7 @@ oc create -f $HOME/gitea-operator/catalog_source.yaml
 
 * CRD enhancements for oc explain
 * Add icon and better description to Operator in Operator Hub
+* Add example CR to the Operator Description
 
 ////
 +
