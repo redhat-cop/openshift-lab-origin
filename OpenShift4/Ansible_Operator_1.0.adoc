@@ -1,4 +1,4 @@
-= Building and publishing a Gitea Operator using the Ansible Operator SDK 1.0 (alpha 2)
+= Building and publishing a Gitea Operator using the Ansible Operator SDK 1.2
 
 == Install Operator SDK
 
