@@ -283,6 +283,10 @@ spec:
   - name: git-url
     type: string
     description: URL of the git repository
+  - name: git-revision
+    description: revision to be used from repo of the code for deployment
+    type: string
+    default: ""
   - name: image-url
     type: string
     description: URL of the container image
@@ -304,6 +308,8 @@ spec:
       value: ""
     - name: deleteExisting
       value: "true"
+    - name: revision
+      value: $(params.git-revision)
   - name: build-image
     taskRef:
       name: buildah
@@ -617,30 +623,7 @@ spec:
     default: master
   - name: git-repo-name
     description: The name of the deployment to be created / patched
-
-  resourcetemplates:
-  - apiVersion: tekton.dev/v1alpha1
-    kind: PipelineResource
-    metadata:
-      name: $(params.git-repo-name)-git-repo-$(uid)
-    spec:
-      type: git
-      params:
-      - name: revision
-        value: $(params.git-revision)
-      - name: url
-        value: $(params.git-repo-url)
-
-  - apiVersion: tekton.dev/v1alpha1
-    kind: PipelineResource
-    metadata:
-      name: $(params.git-repo-name)-image-$(uid)
-    spec:
-      type: image
-      params:
-      - name: url
-        value: image-registry.openshift-image-registry.svc:5000/GUID-pipeline/$(params.git-repo-name):latest
-
+  resourceTemplates:
   - apiVersion: tekton.dev/v1beta1
     kind: PipelineRun
     metadata:
@@ -649,16 +632,24 @@ spec:
       serviceAccountName: pipeline
       pipelineRef:
         name: build-and-deploy
-      resources:
-      - name: git-repo
-        resourceRef:
-          name: $(params.git-repo-name)-git-repo-$(uid)
-      - name: image
-        resourceRef:
-          name: $(params.git-repo-name)-image-$(uid)
       params:
+      - name: git-url
+        value: $(params.git-repo-url)
+      - name: git-revision
+        value: $(params.git-revision)
+      - name: image-url
+        value: image-registry.openshift-image-registry.svc:5000/GUID-pipeline/$(params.git-repo-name):latest
       - name: deployment-name
         value: $(params.git-repo-name)
+      workspaces:
+      - name: shared-workspace
+        volumeClaimTemplate:
+          spec:
+            accessModes:
+            - ReadWriteOnce
+            resources:
+              requests:
+                storage: 50Mi
 EOF
 ----
 +
@@ -803,10 +794,10 @@ metadata:
 spec:
   serviceAccountName: pipeline
   triggers:
-  - bindings:
-    - name: vote-app
-    template:
-      name: vote-app
+    - template:
+        name: vote-app
+      bindings:
+        - ref: vote-app
 EOF
 ----
 +
