@@ -152,24 +152,26 @@ kind: Task
 metadata:
   name: apply-manifests
 spec:
-  resources:
-    inputs:
-    - {type: git, name: source}
   params:
-  - name: manifest_dir
+  - default: k8s
     description: The directory in source that contains yaml manifests
+    name: manifest_dir
     type: string
-    default: "k8s"
   steps:
-  - name: apply
-    image: image-registry.openshift-image-registry.svc:5000/openshift/cli:latest
-    workingDir: /workspace/source
-    command: ["/bin/bash", "-c"]
-    args:
+  - args:
     - |-
-      echo Applying manifests in $(inputs.params.manifest_dir) directory
-      oc apply -f $(inputs.params.manifest_dir)
+      echo Applying manifests in $(params.manifest_dir) directory
+      oc apply -f $(params.manifest_dir)
       echo -----------------------------------
+    command:
+    - /bin/bash
+    - -c
+    image: image-registry.openshift-image-registry.svc:5000/openshift/cli:latest
+    name: apply
+    resources: {}
+    workingDir: $(workspaces.source.path)
+  workspaces:
+  - name: source
 EOF
 ----
 
@@ -184,25 +186,28 @@ kind: Task
 metadata:
   name: update-deployment
 spec:
-  resources:
-    inputs:
-    - {type: image, name: image}
   params:
-  - name: deployment
-    description: The name of the deployment patch the image
+  - description: The name of the deployment patch the image
+    name: deployment
+    type: string
+  - description: The URL of the new image
+    name: image
     type: string
   steps:
-  - name: patch
-    image: image-registry.openshift-image-registry.svc:5000/openshift/cli:latest
-    command: ["/bin/bash", "-c"]
-    args:
+  - args:
     - |-
       oc patch deployment $(inputs.params.deployment) --patch='{"spec":{"template":{"spec":{
         "containers":[{
-          "name": "$(inputs.params.deployment)",
-          "image":"$(inputs.resources.image.url)"
+          "name": "$(params.deployment)",
+          "image":"$(params.image)"
         }]
       }}}}'
+    command:
+    - /bin/bash
+    - -c
+    image: image-registry.openshift-image-registry.svc:5000/openshift/cli:latest
+    name: patch
+    resources: {}
 EOF
 ----
 
@@ -271,58 +276,72 @@ kind: Pipeline
 metadata:
   name: build-and-deploy
 spec:
-  resources:
-  - name: git-repo
-    type: git
-  - name: image
-    type: image
+  workspaces:
+  - name: shared-workspace
+    description: The git repo will be cloned into this workspace.
   params:
+  - name: git-url
+    type: string
+    description: URL of the git repository
+  - name: image-url
+    type: string
+    description: URL of the container image
   - name: deployment-name
     type: string
     description: name of the deployment to be patched
   tasks:
+  - name: fetch-repository
+    taskRef:
+      name: git-clone
+      kind: ClusterTask
+    workspaces:
+    - name: output
+      workspace: shared-workspace
+    params:
+    - name: url
+      value: $(params.git-url)
+    - name: subdirectory
+      value: ""
+    - name: deleteExisting
+      value: "true"
   - name: build-image
     taskRef:
       name: buildah
       kind: ClusterTask
-    resources:
-      inputs:
-      - name: source
-        resource: git-repo
-      outputs:
-      - name: image
-        resource: image
+    workspaces:
+    - name: source
+      workspace: shared-workspace
     params:
     - name: TLSVERIFY
       value: "false"
+    - name: IMAGE
+      value: $(params.image-url)
+    runAfter:
+    - fetch-repository
   - name: apply-manifests
     taskRef:
       name: apply-manifests
-    resources:
-      inputs:
-      - name: source
-        resource: git-repo
+    workspaces:
+    - name: source
+      workspace: shared-workspace
     runAfter:
     - build-image
   - name: update-deployment
     taskRef:
       name: update-deployment
-    resources:
-      inputs:
-      - name: image
-        resource: image
     params:
     - name: deployment
       value: $(params.deployment-name)
+    - name: image
+      value: $(params.image-url)
     runAfter:
     - apply-manifests
 EOF
 ----
 
 . Examine the pipeline and note the following:
-.. You define two resources, a git repository and an image
-.. You might have noticed that there are no references to the actual git repository or image registry. That's because pipeline in Tekton are designed to be generic and re-usable across environments and stages through the application's lifecycle. Pipelines abstract away the specifics of the git source repository and image to be produced as PipelineResources.
-.. There is one parameter, the deployment name
+.. You defined three parameters: a git repository URL, an image URL, and a deployment name
+.. You might have noticed that there are no references to the actual git repository or image registry in the pipeline. That's because pipeline in Tekton are designed to be generic and re-usable across environments and stages through the application's lifecycle. Pipelines abstract away the specifics of the git source repository and image to be produced as parameters.
 .. There are three tasks listed, with their inputs
 .. The execution order of task is determined by dependencies that are defined between the tasks via inputs and outputs as well as explicit orders that are defined via runAfter.
 
@@ -362,117 +381,77 @@ The OpenShift Pipelines Operator has also created a new section in the OpenShift
 
 Before you can execute your pipeline you have to create the inputs and outputs for your pipelines. These are defined in `PipelineResource` objects.
 
-. Create a pipeline resource for your Gogs `vote-ui` repository:
+. Create a pipeline run template for the `vote-ui` application:
 +
 [source,sh]
 ----
 export GOGS_ROUTE=$(oc get route gogs-gogs -n $GUID-gogs --template='http://{{.spec.host}}')
 
 echo "
-apiVersion: tekton.dev/v1alpha1
-kind: PipelineResource
+apiVersion: tekton.dev/v1beta1
+kind: PipelineRun
 metadata:
-  name: ui-repo
+  generateName: build-and-deploy-run-
 spec:
-  type: git
   params:
-  - name: url
+  - name: git-url
     value: ${GOGS_ROUTE}/Pipeline/vote-ui.git
-" >$HOME/pipelines/pipeline_resource_gogs_vote_ui.yaml
-----
-
-. Create another pipeline resource for your Gogs `vote-api` repository:
-+
-[source,sh]
-----
-echo "
-apiVersion: tekton.dev/v1alpha1
-kind: PipelineResource
-metadata:
-  name: api-repo
-spec:
-  type: git
-  params:
-  - name: url
-    value: ${GOGS_ROUTE}/Pipeline/vote-api.git
-" >$HOME/pipelines/pipeline_resource_gogs_vote_api.yaml
-----
-+
-Note how you are setting the url to the specific URL of your Gogs repository.
-
-. Create a third pipeline resource for the built ui container image:
-+
-[source,sh]
-----
-echo "
-apiVersion: tekton.dev/v1alpha1
-kind: PipelineResource
-metadata:
-  name: ui-image
-spec:
-  type: image
-  params:
-  - name: url
+  - name: image-url
     value: image-registry.openshift-image-registry.svc:5000/$GUID-pipeline/vote-ui:latest
-" >$HOME/pipelines/pipeline_resource_image_vote_ui.yaml
+  - name: deployment-name
+    value: vote-ui
+  pipelineRef:
+    name: build-and-deploy
+  workspaces:
+  - name: shared-workspace
+    volumeClaimTemplate:
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 50Mi
+" >$HOME/pipelines/pr_vote_ui.yaml
 ----
 
-. And finally create a pipeline resource for the built api container image:
+. Create another pipeline run template for the `vote-api` application:
 +
 [source,sh]
 ----
 echo "
-apiVersion: tekton.dev/v1alpha1
-kind: PipelineResource
+apiVersion: tekton.dev/v1beta1
+kind: PipelineRun
 metadata:
-  name: api-image
+  generateName: build-and-deploy-run-
 spec:
-  type: image
   params:
-  - name: url
+  - name: git-url
+    value: ${GOGS_ROUTE}/Pipeline/vote-api.git
+  - name: image-url
     value: image-registry.openshift-image-registry.svc:5000/$GUID-pipeline/vote-api:latest
-" >$HOME/pipelines/pipeline_resource_image_vote_api.yaml
-----
-
-. Now create all four pipeline resources:
-+
-[source,sh]
-----
-oc create -f $HOME/pipelines/pipeline_resource_gogs_vote_ui.yaml
-oc create -f $HOME/pipelines/pipeline_resource_gogs_vote_api.yaml
-oc create -f $HOME/pipelines/pipeline_resource_image_vote_ui.yaml
-oc create -f $HOME/pipelines/pipeline_resource_image_vote_api.yaml
-----
-
-. And validate that they are all there:
-+
-[source,sh]
-----
-tkn resource ls
-----
-+
-.Sample Output
-[source,texinfo,options="nowrap"]
-----
-NAME        TYPE    DETAILS
-api-repo    git     url: http://http://gogs-gogs-a4c4-gogs.apps.cluster-navilt.navilt.example.opentlc.com/Pipeline/vote-api.git
-ui-repo     git     url: http://http://gogs-gogs-a4c4-gogs.apps.cluster-navilt.navilt.example.opentlc.com/Pipeline/vote-ui.git
-api-image   image   url: image-registry.openshift-image-registry.svc:5000/a4c4-pipeline/vote-api:latest
-ui-image    image   url: image-registry.openshift-image-registry.svc:5000/a4c4-pipeline/vote-ui:latest
+  - name: deployment-name
+    value: vote-api
+  pipelineRef:
+    name: build-and-deploy
+  workspaces:
+  - name: shared-workspace
+    volumeClaimTemplate:
+      spec:
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests:
+            storage: 50Mi
+" >$HOME/pipelines/pr_vote_api.yaml
 ----
 
 . You are now ready to run your pipeline for the first time.
 +
-In order to run the pipeline you need to create a pipeline run that is binding the pipeline resources to your pieline.
-+
-Create a `PipelineRun` by using the `tkn` command to start the pipeline `build-and-deploy` passing the necessary resources (`-r`) and parameters (`-p`):
+Create a `PipelineRun` by importing the `vote-api` pipeline run template we created earlier:
 +
 [source,sh]
 ----
-tkn pipeline start build-and-deploy \
-    -r git-repo=api-repo \
-    -r image=api-image \
-    -p deployment-name=vote-api
+oc create -f $HOME/pipelines/pr_vote_api.yaml
 ----
 +
 .Sample Output
@@ -561,10 +540,7 @@ Note the following:
 +
 [source,sh]
 ----
-tkn pipeline start build-and-deploy \
-    -r git-repo=ui-repo \
-    -r image=ui-image \
-    -p deployment-name=vote-ui
+oc create -f $HOME/pipelines/pr_vote_ui.yaml
 ----
 +
 .Sample Output
