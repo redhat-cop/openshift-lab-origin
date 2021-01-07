@@ -196,7 +196,7 @@ spec:
   steps:
   - args:
     - |-
-      oc patch deployment $(inputs.params.deployment) --patch='{"spec":{"template":{"spec":{
+      oc patch deployment $(params.deployment) --patch='{"spec":{"template":{"spec":{
         "containers":[{
           "name": "$(params.deployment)",
           "image":"$(params.image)"
