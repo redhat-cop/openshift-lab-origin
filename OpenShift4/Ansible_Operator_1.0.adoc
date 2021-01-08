@@ -372,7 +372,7 @@ rules:
       - watch
 ----
 
-. By default the operator gets installed in project `gitea-operator-system`. 
+. By default the operator gets installed in project `gitea-operator-system`.
 +
 Should you want to change the name of the project change the property `namespace` in the file `config/default/kustomization.yaml`. In this file you can also enable Prometheus monitoring for your operator.
 
@@ -450,6 +450,49 @@ make docker-push IMG=quay.io/$QUAY_ID/gitea-operator:v1.0.0
 
 . Make sure the repository `$QUAY_ID/gitea-operator` in Quay is public.
 
+== Add OpenAPIV3Schema Documentation to the Operator
+
+When using the operator users can specify settings for the deployed application using the `spec` of the Custom Resource (*Gitea*). It is advisable to add OpenAPIV3Schema compliant documentation to the Custom Resource Definition for the Gitea custom resource.
+
+You don't want to add this to the generated files - but rather patch in the documentation using `kustomize`. The base CRD definition can be found in `$HOME/gitea-operator/config/crd/bases/gpte.opentlc.com_giteas.yaml`. The associated *kustomization* file is `$HOME/gitea-operator/config/crd/kustomization.yaml`.
+
+. Create a directory to hold the patches file:
++
+[source,sh]
+----
+mkdir $HOME/gitea-operator/config/crd/patches
+----
+
+. Create the patches file (note that the patch is written in JSON format to fit into one line for the *value* of the patch, also note that `\\\\` will result in just `\\` in the resulting file):
++
+[source,sh]
+----
+cat << EOF >$HOME/gitea-operator/config/crd/patches/transformer-patches-openapi.yaml
+---
+apiVersion: builtin
+kind: PatchTransformer
+metadata:
+  name: add-openapi-docs
+target:
+  group: apiextensions.k8s.io
+  version: v1
+  kind: CustomResourceDefinition
+  name: giteas.gpte.opentlc.com
+patch: |-
+  - op: replace
+    path: /spec/versions/0/schema/openAPIV3Schema/properties/spec/properties
+    value: {"postgresqlVolumeSize":{"description":"Size of the Persistent Volume Claim for the PostgreSQL database. Default is '4Gi'.","type":"string"},"postgresql_image":{"description":"Container image for the PostgreSQL database. Default is 'registry.redhat.io/rhel8/postgresql-12'.","type":"string"},"postgresql_image_tag":{"description":"Image tag for the PostgreSQL container image. Default is 'latest'.","type":"string"},"postgresqlMemoryRequest":{"description":"Memory request for the PostgreSQL database. Default is '512Mi'.","type":"string"},"postgresqlMemoryLimit":{"description":"Memory limit for the PostgreSQL database. Default is '512Mi'.","type":"string"},"postgresqlCpuRequest":{"description":"CPU request for the PostgreSQL database. Default is '200m'.","type":"object","additionalProperties":{"anyOf":[{"type":"integer"},{"type":"string"}],"pattern":"^(\\\\+|-)?(([0-9]+(\\\\.[0-9]*)?)|(\\\\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\\\\+|-)?(([0-9]+(\\\\.[0-9]*)?)|(\\\\.[0-9]+))))?$","x-kubernetes-int-or-string":true}},"postgresqlCpuLimit":{"description":"CPU limit for the PostgreSQL database. Default is '500m'.","type":"object","additionalProperties":{"anyOf":[{"type":"integer"},{"type":"string"}],"pattern":"^(\\\\+|-)?(([0-9]+(\\\\.[0-9]*)?)|(\\\\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\\\\+|-)?(([0-9]+(\\\\.[0-9]*)?)|(\\\\.[0-9]+))))?$","x-kubernetes-int-or-string":true}},"giteaSsl":{"description":"Create an HTTPS terminated route for Gitea. Default is 'false'","type":"boolean"},"giteaRoute":{"description":"Specify the whole Route URL for the Gitea Route. Default is ''.","type":"string"},"giteaVolumeSize":{"description":"Size of the Persistent Volume Claim for Gitea. Default is '4Gi'.","type":"string"},"gitea_image":{"description":"Container image for Gitea. Default is 'quay.io/gpte-devops-automation/gitea'.","type":"string"},"gitea_image_tag":{"description":"Image tag for the Gitea container image. Default is 'latest'.","type":"string"},"giteaMemoryRequest":{"description":"Memory request for Gitea. Default is '1Gi'.","type":"string"},"giteaMemoryLimit":{"description":"Memory limit for Gitea. Default is '1Gi'.","type":"string"},"giteaCpuRequest":{"description":"CPU request for Gitea. Default is '200m'.","type":"object","additionalProperties":{"anyOf":[{"type":"integer"},{"type":"string"}],"pattern":"^(\\\\+|-)?(([0-9]+(\\\\.[0-9]*)?)|(\\\\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\\\\+|-)?(([0-9]+(\\\\.[0-9]*)?)|(\\\\.[0-9]+))))?$","x-kubernetes-int-or-string":true}},"giteaCpuLimit":{"description":"CPU limit for Gitea. Default is '500m'.","type":"object","additionalProperties":{"anyOf":[{"type":"integer"},{"type":"string"}],"pattern":"^(\\\\+|-)?(([0-9]+(\\\\.[0-9]*)?)|(\\\\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\\\\+|-)?(([0-9]+(\\\\.[0-9]*)?)|(\\\\.[0-9]+))))?$","x-kubernetes-int-or-string":true}}}
+EOF
+----
+
+. Add the patch to the file `kustomization.yaml` (only run this command once):
++
+[source,sh]
+----
+echo "transformers:
+- ./patches/transformer-patches-openapi.yaml" >> $HOME/gitea-operator/config/crd/kustomization.yaml
+----
+
 == Deploy the Operator to your cluster
 
 You can use the Operator SDK to deploy the operator to your cluster.
@@ -498,7 +541,7 @@ gitea-operator-controller-manager-65497c4564-z6x4m   2/2     Running   0        
 +
 [source,sh]
 ----
-oc logs -f gitea-operator-controller-manager-65497c4564-z6x4m -c manager -n gitea-operator-system 
+oc logs -f gitea-operator-controller-manager-65497c4564-z6x4m -c manager -n gitea-operator-system
 ----
 
 . In a second window re-create your gitea custom resource `repository`.
@@ -537,7 +580,51 @@ make undeploy IMG=quay.io/$QUAY_ID/gitea-operator:v1.0.0
 
 In this section you create the artifacts necessary to surface your operator in the OperatorHub on your cluster. This allows cluster administrators to install the operator into your cluster using the Operator Lifecycle Manager.
 
-. Install `kustomize`:
+=== Update the Gitea sample to be displayed in OLM
+
+When a new Gitea custom resource is created via the OLM an example is displayed for the user. The default example is not particularly useful.
+
+Update the Sample to be displayed when creating a Gitea from OLM:
+
+[source,sh]
+----
+echo "apiVersion: gpte.opentlc.com/v1
+kind: Gitea
+metadata:
+  name: repository
+spec:
+  postgresqlVolumeSize: 4Gi
+  giteaVolumeSize: 4Gi
+  giteaSsl: True" > $HOME/gitea-operator/config/samples/gpte_v1alpha1_gitea.yaml
+----
+
+=== Add the Gitea Logo for the Operator Bundle
+
+. Download the Gitea Logo from the Gitea web site
++
+[source,sh]
+----
+wget -O /tmp/gitea.svg https://github.com/go-gitea/gitea/raw/master/assets/logo.svg
+----
+
+. base64 encode the logo file (this results in one very long line):
++
+[source,sh]
+----
+base64 --wrap=0 /tmp/gitea.svg > $HOME/gitea-operator/gitea-base64.svg
+----
+
+[NOTE] There *should* be a way to do this via kustomize - but I have not found a way to do it...
+
+. Edit the file $HOME/gitea-operator/config/manifests/bases/gitea-operator.clusterserviceversion.yaml.
+.. Change the lines `/spec/icon/base64data` and add the contents of the file `$HOME/gitea-operator/gitea-base64.svg`.
+.. Change the value of `/spec/icon/mediatype` to `image/svg+xml`
+.. Change the value of `/spec/maturity` from *alpha* to *stable*
+. Save the file.
+
+=== Create the Operator Bundle
+
+. First install `kustomize` (if you don't then the first time the `make bundle` command is run the tool will be installed for you):
 +
 [source,sh]
 ----
@@ -554,7 +641,7 @@ rm kustomize_v3.9.1_linux_amd64.tar.gz
 [source,sh]
 ----
 cd $HOME/gitea-operator
-make bundle VERSION=1.0.0 IMG=quay.io/$QUAY_ID/gitea-operator:v1.0.0
+make bundle CHANNELS=stable DEFAULT_CHANNEL=stable VERSION=1.0.0 IMG=quay.io/$QUAY_ID/gitea-operator:v1.0.0
 ----
 +
 .Sample Output
@@ -604,7 +691,7 @@ make bundle-build BUNDLE_CHANNELS=stable BUNDLE_DEFAULT_CHANNEL=stable VERSION=1
 [source,sh]
 ----
 podman push quay.io/$QUAY_ID/gitea-operator-bundle:v1.0.0
-operator-sdk bundle validate quay.io/$QUAY_ID/gitea-operator-bundle:v1.0.0 --image-builder podman 
+operator-sdk bundle validate quay.io/$QUAY_ID/gitea-operator-bundle:v1.0.0 --image-builder podman
 ----
 
 . The next step is to create a catalog index image. There is a dedicated tool that helps with adding bundle images into an index image.
@@ -704,6 +791,8 @@ podman push quay.io/$QUAY_ID/gitea-catalog:v1.0.0
 
 . Make sure that the repos `gitea-catalog`, `gitea-operator-bundle` and `gitea-operator` in your Quay account are public.
 
+== Create the Catalog Source in the cluster
+
 . In order to use the catalog image from your OpenShift cluster you need to create a catalog source that points to your index image. `openshift-marketplace` is a good project to collect your catalog sources.
 +
 [source,sh]
@@ -729,55 +818,3 @@ oc create -f $HOME/gitea-operator/catalog_source.yaml
 . Log into the OpenShift Web Console, create a new project, navigate to the Operator Hub and you should see the new "Provider Type" and the Gitea Operator in the list of operators.
 
 . You can now deploy the operator from the Operator Hub.
-
-
-== TBD:
-
-* CRD enhancements for oc explain
-* Add icon and better description to Operator in Operator Hub
-* Add example CR to the Operator Description
-
-////
-+
-[source,sh]
-----
-wget https://github.com/go-gitea/gitea/raw/master/assets/logo.svg
-----
-
-Convert from svg to png and base64 encode
-+
-[source,sh]
-----
-pip3 install cairosvg
-cairosvg -H 300 -W 300 -f png -o gitea.png logo.svg
-base64 gitea.png > gitea-base64.png
-----
-
-Main kustomization file: gitea-operator/config/defaults/kustomization.yaml
-
-CRD: $HOME/gitea-operator/config/crd/bases/gpte.opentlc.com_giteas.yaml
-Kustomzation: $HOME/gitea-operator/config/crd/kustomization.yaml
-
-Manifests:
-Kustomization: $HOME/gitea-operator/config/manifests/kustomization.yaml
-CSV: $HOME/gitea-operator/config/manifests/bases/gitea-operator.clusterserviceversion.yaml
-
-
-
-=== Update the sample to be displayed in OLM
-
-Update the Sample to be displayed when creating a Gitea from OLM:
-
-[source,sh]
-----
-echo "apiVersion: gpte.opentlc.com/v1
-kind: Gitea
-metadata:
-  name: repository
-spec:
-  postgresqlVolumeSize: 4Gi
-  giteaVolumeSize: 4Gi
-  giteaSsl: True" > $HOME/gitea-operator/config/samples/gpte_v1alpha1_gitea.yaml
-----
-Update bundle with `make bundle`
-////
