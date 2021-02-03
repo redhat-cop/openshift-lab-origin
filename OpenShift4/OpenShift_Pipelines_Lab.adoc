@@ -263,7 +263,7 @@ image::images/pipeline-diagram.png[width=100%]
 In the box on the right you see the pipeline with the following steps:
 
 * Using the `git-clone` task clone the source code from Gogs
-* Using `buildah` task clone the source code from Gogs, build the container image and push it to the OpenShift registry
+* Using `buildah` task, build the container image and push it to the OpenShift registry
 * Apply the Kubernetes manifests from the source code repository to create / update the application
 * Update the Deployment to use the recently built container image (which will trigger a redeploy of the application)
 
