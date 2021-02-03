@@ -915,6 +915,6 @@ If your pipeline is not running after a few seconds you can check the pod logs o
 
 You have created a simple, four step pipeline using two existing and two custom tasks.
 
-You tested the generic pipeline by adding pipelineruns using these pipelineruns to execute your generic pipeline twice - for two different applications from two different repositories
+You tested the generic pipeline by adding two pipelineruns and using these pipelineruns to execute your generic pipeline twice - for two different applications from two different repositories
 
 And finally you set up triggering so that every push to the repository will trigger a Pipeline Run.
