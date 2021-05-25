@@ -402,6 +402,18 @@ Password:
 Login Succeeded!
 ----
 
+. Set Environment Variables for operator, bundle and catalogsource versions:
++
+[source,sh]
+----
+export OPERATOR_VERSION=v1.1.0
+
+# No v in front of the Bundle version
+export BUNDLE_VERSION=1.1.0
+
+export CATALOG_VERSION=v1.1.0
+----
+
 . To build on Linux with `podman` instead of `docker` make sure that docker is symlink to podman:
 +
 [source,sh]
@@ -413,7 +425,7 @@ sudo ln -s $(which podman) /usr/bin/docker
 +
 [source,sh]
 ----
-make docker-build IMG=quay.io/$QUAY_ID/gitea-operator:v1.0.4
+make docker-build IMG=quay.io/$QUAY_ID/gitea-operator:$OPERATOR_VERSION
 ----
 +
 .Sample Output
@@ -461,7 +473,7 @@ make docker-build IMG=quay.io/$QUAY_ID/gitea-operator:v1.0.4
 +
 [source,sh]
 ----
-make docker-push IMG=quay.io/$QUAY_ID/gitea-operator:v1.0.4
+make docker-push IMG=quay.io/$QUAY_ID/gitea-operator:$OPERATOR_VERSION
 ----
 
 . Make sure the repository `$QUAY_ID/gitea-operator` in Quay is public.
@@ -476,28 +488,237 @@ You don't want to add this to the generated files - but rather patch in the docu
 +
 [source,sh]
 ----
-mkdir $HOME/gitea-operator/config/crd/patches
+cd $HOME/gitea-operator
+mkdir ./config/crd/patches
 ----
 
-. Create the patches file (note that the patch is written in JSON format to fit into one line for the *value* of the patch, also note that `\\\\` will result in just `\\` in the resulting file):
+. Create the patches file:
 +
 [source,sh]
 ----
-cat << EOF >$HOME/gitea-operator/config/crd/patches/transformer-patches-openapi.yaml
+cat << EOF >./config/crd/patches/crd_openapi.yaml
 ---
-apiVersion: builtin
-kind: PatchTransformer
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
 metadata:
-  name: add-openapi-docs
-target:
-  group: apiextensions.k8s.io
-  version: v1
-  kind: CustomResourceDefinition
   name: giteas.gpte.opentlc.com
-patch: |-
-  - op: replace
-    path: /spec/versions/0/schema/openAPIV3Schema/properties/spec/properties
-    value: {"postgresqlVolumeSize":{"description":"Size of the Persistent Volume Claim for the PostgreSQL database. Default is '4Gi'.","type":"string"},"postgresql_image":{"description":"Container image for the PostgreSQL database. Default is 'registry.redhat.io/rhel8/postgresql-12'.","type":"string"},"postgresql_image_tag":{"description":"Image tag for the PostgreSQL container image. Default is 'latest'.","type":"string"},"postgresqlMemoryRequest":{"description":"Memory request for the PostgreSQL database. Default is '512Mi'.","type":"string"},"postgresqlMemoryLimit":{"description":"Memory limit for the PostgreSQL database. Default is '512Mi'.","type":"string"},"postgresqlCpuRequest":{"description":"CPU request for the PostgreSQL database. Default is '200m'.","type":"object","additionalProperties":{"anyOf":[{"type":"integer"},{"type":"string"}],"pattern":"^(\\\\+|-)?(([0-9]+(\\\\.[0-9]*)?)|(\\\\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\\\\+|-)?(([0-9]+(\\\\.[0-9]*)?)|(\\\\.[0-9]+))))?$","x-kubernetes-int-or-string":true}},"postgresqlCpuLimit":{"description":"CPU limit for the PostgreSQL database. Default is '500m'.","type":"object","additionalProperties":{"anyOf":[{"type":"integer"},{"type":"string"}],"pattern":"^(\\\\+|-)?(([0-9]+(\\\\.[0-9]*)?)|(\\\\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\\\\+|-)?(([0-9]+(\\\\.[0-9]*)?)|(\\\\.[0-9]+))))?$","x-kubernetes-int-or-string":true}},"giteaSsl":{"description":"Create an HTTPS terminated route for Gitea. Default is 'false'","type":"boolean"},"giteaRoute":{"description":"Specify the whole Route URL for the Gitea Route. Default is ''.","type":"string"},"giteaVolumeSize":{"description":"Size of the Persistent Volume Claim for Gitea. Default is '4Gi'.","type":"string"},"gitea_image":{"description":"Container image for Gitea. Default is 'quay.io/gpte-devops-automation/gitea'.","type":"string"},"gitea_image_tag":{"description":"Image tag for the Gitea container image. Default is 'latest'.","type":"string"},"giteaMemoryRequest":{"description":"Memory request for Gitea. Default is '1Gi'.","type":"string"},"giteaMemoryLimit":{"description":"Memory limit for Gitea. Default is '1Gi'.","type":"string"},"giteaCpuRequest":{"description":"CPU request for Gitea. Default is '200m'.","type":"object","additionalProperties":{"anyOf":[{"type":"integer"},{"type":"string"}],"pattern":"^(\\\\+|-)?(([0-9]+(\\\\.[0-9]*)?)|(\\\\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\\\\+|-)?(([0-9]+(\\\\.[0-9]*)?)|(\\\\.[0-9]+))))?$","x-kubernetes-int-or-string":true}},"giteaCpuLimit":{"description":"CPU limit for Gitea. Default is '500m'.","type":"object","additionalProperties":{"anyOf":[{"type":"integer"},{"type":"string"}],"pattern":"^(\\\\+|-)?(([0-9]+(\\\\.[0-9]*)?)|(\\\\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\\\\+|-)?(([0-9]+(\\\\.[0-9]*)?)|(\\\\.[0-9]+))))?$","x-kubernetes-int-or-string":true}}}
+spec:
+  versions:
+  - name: v1
+    served: true
+    storage: true
+    subresources:
+      status: {}
+    schema:
+      openAPIV3Schema:
+        description: Gitea is the Schema for the giteas API
+        type: object
+        properties:
+          apiVersion:
+            description: 'APIVersion defines the versioned schema of this representation
+              of an object. Servers should convert recognized schemas to the latest
+              internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+            type: string
+          kind:
+            description: 'Kind is a string value representing the REST resource this
+              object represents. Servers may infer this from the endpoint the client
+              submits requests to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+            type: string
+          metadata:
+            type: object
+          status:
+            description: Status defines the observed state of Gitea
+            type: object
+            x-kubernetes-preserve-unknown-fields: true
+          spec:
+            description: Spec defines the desired state of Gitea
+            type: object
+            x-kubernetes-preserve-unknown-fields: true
+            properties:
+
+              postgresqlSetup:
+                description: 'Set up a PostgreSQL database alongside the Gitea instance. Default is true.
+
+                If set to false the values for giteaPostgresqlServiceName, giteaPostgresqlDatabaseName, giteaPostgresqlUser and giteaPostgresqlPassword need to be specified to connect to an existing PostgreSQL database.
+
+                If set to true no values need to be specified for database name, database service, database user and database service.'
+                type: boolean
+              postgresqlServiceName:
+                description: Name of the PostgreSQL database service. Default is 'postgresql-' followed by the name of the Gitea resource.
+                type: string
+              postgresqlDatabaseName:
+                description: Name of the PostgreSQL Database to be created. Default is 'giteadb'.
+                type: string
+              postgresqlUser:
+                description: Username to be created in the PostgreSQL database. Default is 'giteauser'.
+                type: string
+              postgresqlPassword:
+                description: Password to be used for the PostgreSQL database user. Default is 'giteapassword'.
+                type: string
+              postgresqlVolumeSize:
+                description: Size of the persistent volume claim for the PostgreSQL database. Default
+                  is '4Gi'.
+                type: string
+              postgresqlVolumeStorageClass:
+                description: Storage Class to be used for the PostgreSQL persistent volume claim. Default is empty - which will create a PVC using the currently available default storage class on the cluster.
+                type: string
+              postgresqlImage:
+                description: Container image for the PostgreSQL database. Default is 'registry.redhat.io/rhel8/postgresql-12'.
+                type: string
+              postgresqlImageTag:
+                description: Image tag for the PostgreSQL container image. Default is 'latest'.
+                type: string
+              postgresqlMemoryRequest:
+                description: Memory request for the PostgreSQL database. Default is '512Mi'.
+                type: string
+              postgresqlMemoryLimit:
+                description: Memory limit for the PostgreSQL database. Default is '512Mi'.
+                type: string
+              postgresqlCpuRequest:
+                description: CPU request for the PostgreSQL database. Default is '200m'.
+                type: object
+                additionalProperties:
+                  anyOf:
+                  - type: integer
+                  - type: string
+                  pattern: "^(\\\\+|-)?(([0-9]+(\\\\.[0-9]*)?)|(\\\\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\\\\+|-)?(([0-9]+(\\\\.[0-9]*)?)|(\\\\.[0-9]+))))?$"
+                  x-kubernetes-int-or-string: true
+              postgresqlCpuLimit:
+                description: CPU limit for the PostgreSQL database. Default is '500m'.
+                type: object
+                additionalProperties:
+                  anyOf:
+                  - type: integer
+                  - type: string
+                  pattern: "^(\\\\+|-)?(([0-9]+(\\\\.[0-9]*)?)|(\\\\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\\\\+|-)?(([0-9]+(\\\\.[0-9]*)?)|(\\\\.[0-9]+))))?$"
+                  x-kubernetes-int-or-string: true
+
+              giteaServiceName:
+                description: Name of the Gitea Service to be deployed. Defaults to the name of the Gitea custom resource.
+                type: string
+              giteaSsl:
+                description: Create an HTTPS terminated route for Gitea. Default is 'false'
+                type: boolean
+              giteaRoute:
+                description: Specify the whole Route URL for the Gitea Route. Default is ''. Make sure the route is reachable from outside the cluster.
+                type: string
+              giteaVolumeSize:
+                description: Size of the persistent volume claim for Gitea. Default is '4Gi'.
+                type: string
+              giteaVolumeStorageClass:
+                description: Storage Class to be used for the Gitea persistent volume claim. Default is empty - which will create a PVC using the currently available default storage class on the cluster.
+                type: string
+              giteaImage:
+                description: Container image for Gitea. Default is 'quay.io/gpte-devops-automation/gitea'.
+                type: string
+              giteaImageTag:
+                description: Image tag for the Gitea container image. Default is 'latest'.
+                type: string
+              giteaMemoryRequest:
+                description: Memory request for Gitea. Default is '1Gi'.
+                type: string
+              giteaMemoryLimit:
+                description: Memory limit for Gitea. Default is '1Gi'.
+                type: string
+              giteaCpuRequest:
+                description: CPU request for Gitea. Default is '200m'.
+                type: object
+                additionalProperties:
+                  anyOf:
+                  - type: integer
+                  - type: string
+                  pattern: "^(\\\\+|-)?(([0-9]+(\\\\.[0-9]*)?)|(\\\\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\\\\+|-)?(([0-9]+(\\\\.[0-9]*)?)|(\\\\.[0-9]+))))?$"
+                  x-kubernetes-int-or-string: true
+              giteaCpuLimit:
+                description: CPU limit for Gitea. Default is '500m'.
+                type: object
+                additionalProperties:
+                  anyOf:
+                  - type: integer
+                  - type: string
+                  pattern: "^(\\\\+|-)?(([0-9]+(\\\\.[0-9]*)?)|(\\\\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\\\\+|-)?(([0-9]+(\\\\.[0-9]*)?)|(\\\\.[0-9]+))))?$"
+                  x-kubernetes-int-or-string: true
+
+              giteaPostgresqlServiceName:
+                description: 'Name of the PostgreSQL service. Only required when PostgreSQL is not set up by the operator. Default: postgresql- followed by the Gitea resource name.'
+                type: string
+              giteaPostgresqlDatabaseName:
+                description: 'Name of the PostgreSQL database. Only required when PostgreSQL is not set up by the operator. Default: giteadb'
+                type: string
+              giteaPostgresqlUser:
+                description: 'Name of the PostgreSQL user. Only required when PostgreSQL is not set up by the operator. Default: giteauser'
+                type: string
+              giteaPostgresqlPassword:
+                description: 'PostgreSQL password. Only required when PostgreSQL is not set up by the operator. Default: giteapassword'
+                type: string
+
+              giteaAdminUser:
+                description: 'User ID for the Admin User to be created. If not specified no admin user will be created. Note that if giteaDisableRegistration is set to false and no admin user will be created you will not be able to create any users for Gitea. Default: ""'
+                type: string
+              giteaAdminPassword:
+                description: 'Password for the Gitea admin user. If not specified or empty a random password will be created with length of giteaAdminPasswordLength random ASCII characters. Default: ""'
+                type: string
+              giteaAdminPasswordLength:
+                description: 'If a giteaAdminUser is provided but no giteaAdminPassowrd is provided a random ASCII password with the length specified will be created. Default: 16'
+                type: string
+              giteaAdminEmail:
+                description: 'e-mail address for the Gitea Admin User. Default: "notset@notset.org"'
+                type: string
+
+              giteaHttpPort:
+                description: 'Port for Gitea to listen on. Default: 3000'
+                type: integer
+              giteaSshPort:
+                description: 'Port for Gitea to start an SSH server on. Default: 2022'
+                type: integer
+              giteaDisableSsh:
+                description: 'Disable SSH for Gitea. Default: true'
+                type: boolean
+              giteaStartSshServer:
+                description: 'Start SSH Server in the Gitea container. Default: false'
+                type: boolean
+              giteaDisableRegistration:
+                description: 'Disable user self-registration. If this flag is set an Admin User should be specified to be created. Otherwise no users can be created at all. Default: false'
+                type: boolean
+              giteaEnableCaptcha:
+                description: 'Display Captcha when users are registering a new account. No effect if giteaDisableRegistration is set to false. Default: false'
+                type: boolean
+              giteaAllowCreateOrganization:
+                description: 'Allow users to create organizations in Gitea. Default: true'
+                type: boolean
+
+              giteaMailerEnabled:
+                description: 'Enable e-mail integration for Gitea. If set to true the other giteaMailer* properties need to be provided. See https://docs.gitea.io/en-us/email-setup/ for example values. Default: false'
+                type: boolean
+              giteaMailerFrom:
+                description: 'E-mail integration. FROM e-mail address to be used. Default: ""'
+                type: string
+              giteaMailerType:
+                description: 'Type of e-mail provider to be used. Default: smtp'
+                type: string
+              giteaMailerHost:
+                description: 'Hostname of the e-mail server to be used. Default: ""'
+                type: string
+              giteaMailerTls:
+                description: 'Use TLS encryption when connecting to the mailer host. Default: true'
+                type: boolean
+              giteaMailerUser:
+                description: 'User ID on the e-mail server to use. Frequently the same as the value for giteaMailerFrom. Default: ""'
+                type: string
+              giteaMailerPassword:
+                description: 'Password for the User ID on the e-mail server to be used. May need to be an app-specific password if two-factor authentication is enabled on the e-mail server. Default: ""'
+                type: string
+              giteaMailerHeloHostname:
+                description: 'Helo Hostname for the e-mail server. Not required for all e-mail providers. Default: ""'
+                type: string
+
+              giteaRegisterEmailConfirm:
+                description: 'Send e-mail confirmation to users when self-registering. Users must click a link to validate their e-mail address before the account gets created. Requires the mailer to be configured correctly. Default: false'
+                type: boolean
+              giteaEnableNotifyMail:
+                description: 'Send e-mail notifications to users for various tasks in Gitea. Requires the mailer to be configured correctly. Default: false'
+                type: boolean
 EOF
 ----
 
@@ -505,8 +726,13 @@ EOF
 +
 [source,sh]
 ----
-echo "transformers:
-- ./patches/transformer-patches-openapi.yaml" >> $HOME/gitea-operator/config/crd/kustomization.yaml
+echo "patches:
+- path: ./patches/crd_openapi.yaml
+  target:
+    group: apiextensions.k8s.io
+    version: v1
+    kind: CustomResourceDefinition
+    name: giteas.gpte.opentlc.com" >> ./config/crd/kustomization.yaml
 ----
 
 == Deploy the Operator to your cluster
@@ -518,7 +744,7 @@ You can use the Operator SDK to deploy the operator to your cluster.
 +
 [source,sh]
 ----
-make deploy IMG=quay.io/$QUAY_ID/gitea-operator:v1.0.4
+make deploy IMG=quay.io/$QUAY_ID/gitea-operator:$OPERATOR_VERSION
 ----
 +
 .Sample Output
@@ -567,7 +793,7 @@ oc logs -f gitea-operator-controller-manager-65497c4564-z6x4m -c manager -n gite
 +
 [source,sh]
 ----
-oc create -f $HOME/gitea-operator/config/samples/gitea-server.yaml -n gitea
+oc create -f ./config/samples/gitea-server.yaml -n gitea
 ----
 
 . Observe the logs from the operator. Once again there should be no errors.
@@ -580,7 +806,7 @@ If you need to make adjustments to the role you can just redeploy the operator a
 
 [source,sh]
 ----
-make deploy IMG=quay.io/$QUAY_ID/gitea-operator:v1.0.4
+make deploy IMG=quay.io/$QUAY_ID/gitea-operator:$OPERATOR_VERSION
 ----
 ====
 
@@ -592,7 +818,7 @@ Clean up the Gitea repository and operator before proceeding to the next section
 ----
 oc delete -f $HOME/gitea-operator/config/samples/gitea-server.yaml -n gitea
 oc delete project gitea
-make undeploy IMG=quay.io/$QUAY_ID/gitea-operator:v1.0.4
+make undeploy IMG=quay.io/$QUAY_ID/gitea-operator:$OPERATOR_VERSION
 ----
 
 == Operator Lifecycle manager
@@ -614,7 +840,7 @@ metadata:
 spec:
   postgresqlVolumeSize: 4Gi
   giteaVolumeSize: 4Gi
-  giteaSsl: True" > $HOME/gitea-operator/config/samples/gpte_v1_gitea.yaml
+  giteaSsl: True" > ./config/samples/gpte_v1_gitea.yaml
 ----
 
 === Create the Operator Bundle
@@ -636,7 +862,7 @@ rm kustomize_v3.9.1_linux_amd64.tar.gz
 [source,sh]
 ----
 cd $HOME/gitea-operator
-make bundle CHANNELS=stable DEFAULT_CHANNEL=stable VERSION=1.0.4 IMG=quay.io/$QUAY_ID/gitea-operator:v1.0.4
+make bundle CHANNELS=stable DEFAULT_CHANNEL=stable VERSION=$BUNDLE_VERSION IMG=quay.io/$QUAY_ID/gitea-operator:$OPERATOR_VERSION
 ----
 +
 .Sample Output
@@ -648,7 +874,7 @@ Display name for the operator (required):
 > Gitea Operator
 
 Description for the operator (required):
-> Gitea Operator - provided by Red Hat GPTE
+> Gitea Operator - provided by Red Hat GPTE, see https://github.com/redhat-gpte-devopsautomation/gitea-operator for documentation.
 
 Provider's name for the operator (required):
 > Red Hat GPTE
@@ -662,12 +888,9 @@ Comma-separated list of keywords for your operator (required):
 Comma-separated list of maintainers and their emails (e.g. 'name1:email1, name2:email2') (required):
 > Wolfgang Kulhanek:wkulhane@redhat.com
 
-cd config/manager && /Users/wkulhane/bin/kustomize edit set image controller=quay.io/wkulhanek/gitea-operator:v1.0.4
-/Users/wkulhane/bin/kustomize build config/manifests | operator-sdk generate bundle -q --overwrite --version 1.0.4
-INFO[0000] Building annotations.yaml
-INFO[0000] Writing annotations.yaml in /Users/wkulhane/Development/operators/gitea-operator/bundle/metadata
-INFO[0000] Building Dockerfile
-INFO[0000] Writing bundle.Dockerfile in /Users/wkulhane/Development/operators/gitea-operator
+operator-sdk generate kustomize manifests -q
+cd config/manager && /Users/wkulhane/bin/kustomize edit set image controller=quay.io/wkulhanek/gitea-operator:v1.1.0
+/Users/wkulhane/bin/kustomize build config/manifests | operator-sdk generate bundle -q --overwrite --version 1.1.0 --channels=stable --default-channel=stable
 operator-sdk bundle validate ./bundle
 INFO[0000] Found annotations file                        bundle-dir=bundle container-tool=docker
 INFO[0000] Could not find optional dependencies file     bundle-dir=bundle container-tool=docker
@@ -704,15 +927,15 @@ base64 --wrap=0 /tmp/gitea.svg > $HOME/gitea-operator/gitea-base64.svg
 +
 [source,sh]
 ----
-make bundle-build BUNDLE_CHANNELS=stable BUNDLE_DEFAULT_CHANNEL=stable VERSION=1.0.4 BUNDLE_IMG=quay.io/$QUAY_ID/gitea-operator-bundle:v1.0.4
+make bundle-build BUNDLE_CHANNELS=stable BUNDLE_DEFAULT_CHANNEL=stable VERSION=$BUNDLE_VERSION BUNDLE_IMG=quay.io/$QUAY_ID/gitea-operator-bundle:v$BUNDLE_VERSION
 ----
 
 . Push the bundle image to the Quay registry and then validate that it looks correct (on macOS use `docker` instead of `podman`).
 +
 [source,sh]
 ----
-podman push quay.io/$QUAY_ID/gitea-operator-bundle:v1.0.4
-operator-sdk bundle validate quay.io/$QUAY_ID/gitea-operator-bundle:v1.0.4 --image-builder podman
+podman push quay.io/$QUAY_ID/gitea-operator-bundle:v$BUNDLE_VERSION
+operator-sdk bundle validate quay.io/$QUAY_ID/gitea-operator-bundle:v$BUNDLE_VERSION --image-builder podman
 ----
 
 . The next step is to create a catalog index image. There is a dedicated tool that helps with adding bundle images into an index image.
@@ -722,7 +945,7 @@ Download and install the `opm` tool:
 .Linux (simple approach)
 [source,sh]
 ----
-export OPM_RELEASE=v1.15.3
+export OPM_RELEASE=v1.17.1
 
 curl -L https://github.com/operator-framework/operator-registry/releases/download/${OPM_RELEASE}/linux-amd64-opm -o ./opm
 
@@ -734,12 +957,12 @@ sudo mv opm /usr/local/bin/opm
 .macOS
 [source,sh]
 ----
-export OPM_RELEASE=v1.15.3
+export OPM_RELEASE=v1.17.1
 
 curl -L https://github.com/operator-framework/operator-registry/releases/download/$OPM_RELEASE/darwin-amd64-opm -o ./opm
 
 chmod +x ./opm
-mv opm ~/bin/opm
+mv opm $HOME/bin/opm
 ----
 +
 [NOTE]
@@ -773,36 +996,36 @@ On macOS you need to add the parameter `--container-tool docker` because `podman
 +
 [source,sh]
 ----
-opm index add --bundles quay.io/$QUAY_ID/gitea-operator-bundle:v1.0.4 --tag quay.io/$QUAY_ID/gitea-catalog:v1.0.4
+opm index add --bundles quay.io/$QUAY_ID/gitea-operator-bundle:v$BUNDLE_VERSION --tag quay.io/$QUAY_ID/gitea-catalog:$CATALOG_VERSION
 ----
 +
 .Sample Output
 [source,texinfo]
 ----
-INFO[0000] building the index                            bundles="[quay.io/gpte-devops-automation/gitea-operator-bundle:v1.0.4]"
-INFO[0000] running /usr/local/bin/docker pull quay.io/gpte-devops-automation/gitea-operator-bundle:v1.0.4  bundles="[quay.io/gpte-devops-automation/gitea-operator-bundle:v1.0.4]"
-INFO[0001] running docker create                         bundles="[quay.io/gpte-devops-automation/gitea-operator-bundle:v1.0.4]"
-INFO[0001] running docker cp                             bundles="[quay.io/gpte-devops-automation/gitea-operator-bundle:v1.0.4]"
-INFO[0001] running docker rm                             bundles="[quay.io/gpte-devops-automation/gitea-operator-bundle:v1.0.4]"
-INFO[0001] Could not find optional dependencies file     dir=bundle_tmp571592019 file=bundle_tmp571592019/metadata load=annotations
-INFO[0001] found csv, loading bundle                     dir=bundle_tmp571592019 file=bundle_tmp571592019/manifests load=bundle
-INFO[0001] loading bundle file                           dir=bundle_tmp571592019/manifests file=gitea-operator-controller-manager-metrics-service_v1_service.yaml load=bundle
-INFO[0001] loading bundle file                           dir=bundle_tmp571592019/manifests file=gitea-operator-controller-manager_v1_serviceaccount.yaml load=bundle
-INFO[0001] loading bundle file                           dir=bundle_tmp571592019/manifests file=gitea-operator-manager-config_v1_configmap.yaml load=bundle
-INFO[0001] loading bundle file                           dir=bundle_tmp571592019/manifests file=gitea-operator-metrics-reader_rbac.authorization.k8s.io_v1_clusterrole.yaml load=bundle
-INFO[0001] loading bundle file                           dir=bundle_tmp571592019/manifests file=gitea-operator.clusterserviceversion.yaml load=bundle
-INFO[0001] loading bundle file                           dir=bundle_tmp571592019/manifests file=gpte.opentlc.com_giteas.yaml load=bundle
-INFO[0001] Generating dockerfile                         bundles="[quay.io/gpte-devops-automation/gitea-operator-bundle:v1.0.4]"
-INFO[0001] writing dockerfile: index.Dockerfile406235321  bundles="[quay.io/gpte-devops-automation/gitea-operator-bundle:v1.0.4]"
-INFO[0001] running docker build                          bundles="[quay.io/gpte-devops-automation/gitea-operator-bundle:v1.0.4]"
-INFO[0001] [docker build -f index.Dockerfile406235321 -t quay.io/gpte-devops-automation/gitea-catalog:v1.0.4 .]  bundles="[quay.io/gpte-devops-automation/gitea-operator-bundle:v1.0.4]"
+INFO[0000] building the index                            bundles="[quay.io/wkulhanek/gitea-operator-bundle:v1.1.0]"
+INFO[0000] running /usr/local/bin/docker pull quay.io/wkulhanek/gitea-operator-bundle:v1.1.0  bundles="[quay.io/wkulhanek/gitea-operator-bundle:v1.1.0]"
+INFO[0001] running docker create                         bundles="[quay.io/wkulhanek/gitea-operator-bundle:v1.1.0]"
+INFO[0001] running docker cp                             bundles="[quay.io/wkulhanek/gitea-operator-bundle:v1.1.0]"
+INFO[0001] running docker rm                             bundles="[quay.io/wkulhanek/gitea-operator-bundle:v1.1.0]"
+INFO[0002] Could not find optional dependencies file     dir=bundle_tmp885249269 file=bundle_tmp885249269/metadata load=annotations
+INFO[0002] found csv, loading bundle                     dir=bundle_tmp885249269 file=bundle_tmp885249269/manifests load=bundle
+INFO[0002] loading bundle file                           dir=bundle_tmp885249269/manifests file=gitea-operator-controller-manager-metrics-service_v1_service.yaml load=bundle
+INFO[0002] loading bundle file                           dir=bundle_tmp885249269/manifests file=gitea-operator-controller-manager_v1_serviceaccount.yaml load=bundle
+INFO[0002] loading bundle file                           dir=bundle_tmp885249269/manifests file=gitea-operator-manager-config_v1_configmap.yaml load=bundle
+INFO[0002] loading bundle file                           dir=bundle_tmp885249269/manifests file=gitea-operator-metrics-reader_rbac.authorization.k8s.io_v1_clusterrole.yaml load=bundle
+INFO[0002] loading bundle file                           dir=bundle_tmp885249269/manifests file=gitea-operator.clusterserviceversion.yaml load=bundle
+INFO[0002] loading bundle file                           dir=bundle_tmp885249269/manifests file=gpte.opentlc.com_giteas.yaml load=bundle
+INFO[0002] Generating dockerfile                         bundles="[quay.io/wkulhanek/gitea-operator-bundle:v1.1.0]"
+INFO[0002] writing dockerfile: index.Dockerfile883185803  bundles="[quay.io/wkulhanek/gitea-operator-bundle:v1.1.0]"
+INFO[0002] running docker build                          bundles="[quay.io/wkulhanek/gitea-operator-bundle:v1.1.0]"
+INFO[0002] [docker build -f index.Dockerfile883185803 -t quay.io/wkulhanek/gitea-catalog:v1.1.0 .]  bundles="[quay.io/wkulhanek/gitea-operator-bundle:v1.1.0]"
 ----
 
 . Push the catalog image to the Quay repository (on macOS use `docker` instead of `podman`):
 +
 [source,sh]
 ----
-podman push quay.io/$QUAY_ID/gitea-catalog:v1.0.4
+podman push quay.io/$QUAY_ID/gitea-catalog:$CATALOG_VERSION
 ----
 
 . Make sure that the repos `gitea-catalog`, `gitea-operator-bundle` and `gitea-operator` in your Quay account are public.
@@ -816,19 +1039,20 @@ podman push quay.io/$QUAY_ID/gitea-catalog:v1.0.4
 echo "apiVersion: operators.coreos.com/v1alpha1
 kind: CatalogSource
 metadata:
-  name: redhat-gpte
+  name: redhat-gpte-gitea
   namespace: openshift-marketplace
 spec:
   sourceType: grpc
-  image: quay.io/$QUAY_ID/gitea-catalog:v1.0.4
-  displayName: Red Hat GPTE" > $HOME/gitea-operator/catalog_source.yaml
+  image: quay.io/$QUAY_ID/gitea-catalog:$CATALOG_VERSION
+  displayName: Red Hat GPTE (Gitea)
+  publisher: Red Hat GPTE" > ./catalog_source.yaml
 ----
 
 . Create the Catalog Source in the cluster
 +
 [source,sh]
 ----
-oc create -f $HOME/gitea-operator/catalog_source.yaml
+oc create -f ./catalog_source.yaml
 ----
 
 . Log into the OpenShift Web Console, create a new project, navigate to the Operator Hub and you should see the new "Provider Type" and the Gitea Operator in the list of operators.
