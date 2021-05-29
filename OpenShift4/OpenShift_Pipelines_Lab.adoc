@@ -1,6 +1,6 @@
 = OpenShift Pipelines Lab
 
-This lab explores the use of OpenShift Pipelines on OpenShift Container Platform.
+This lab explores the use of OpenShift Pipelines on the OpenShift Container Platform.
 
 == Set up Source Code repositories
 
@@ -62,33 +62,33 @@ tkn clustertasks ls
 ----
 NAME                       AGE
 buildah                    5 days ago
-buildah-v0-11-3            5 days ago
+buildah-v0-16-3            5 days ago
 git-clone                  5 days ago
 jib-maven                  5 days ago
 kn                         5 days ago
 maven                      5 days ago
 openshift-client           5 days ago
-openshift-client-v0-11-3   5 days ago
+openshift-client-v0-16-3   5 days ago
 s2i                        5 days ago
 s2i-dotnet-3               5 days ago
-s2i-dotnet-3-v0-11-3       5 days ago
+s2i-dotnet-3-v0-16-3       5 days ago
 s2i-go                     5 days ago
-s2i-go-v0-11-3             5 days ago
+s2i-go-v0-16-3             5 days ago
 s2i-java-11                5 days ago
-s2i-java-11-v0-11-3        5 days ago
+s2i-java-11-v0-16-3        5 days ago
 s2i-java-8                 5 days ago
-s2i-java-8-v0-11-3         5 days ago
+s2i-java-8-v0-16-3         5 days ago
 s2i-nodejs                 5 days ago
-s2i-nodejs-v0-11-3         5 days ago
+s2i-nodejs-v0-16-3         5 days ago
 s2i-perl                   5 days ago
-s2i-perl-v0-11-3           5 days ago
+s2i-perl-v0-16-3           5 days ago
 s2i-php                    5 days ago
-s2i-php-v0-11-3            5 days ago
+s2i-php-v0-16-3            5 days ago
 s2i-python-3               5 days ago
-s2i-python-3-v0-11-3       5 days ago
+s2i-python-3-v0-16-3       5 days ago
 s2i-ruby                   5 days ago
-s2i-ruby-v0-11-3           5 days ago
-s2i-v0-11-3                5 days ago
+s2i-ruby-v0-16-3           5 days ago
+s2i-v0-16-3                5 days ago
 tkn                        5 days ago
 ----
 
@@ -262,7 +262,8 @@ image::images/pipeline-diagram.png[width=100%]
 
 In the box on the right you see the pipeline with the following steps:
 
-* Using the `buildah` task clone the source code from Gogs, build the container image and push it to the OpenShift registry
+* Using the `git-clone` task clone the source code from Gogs
+* Using `buildah` task, build the container image and push it to the OpenShift registry
 * Apply the Kubernetes manifests from the source code repository to create / update the application
 * Update the Deployment to use the recently built container image (which will trigger a redeploy of the application)
 
@@ -348,7 +349,7 @@ EOF
 . Examine the pipeline and note the following:
 .. You defined three parameters: a git repository URL, an image URL, and a deployment name
 .. You might have noticed that there are no references to the actual git repository or image registry in the pipeline. That's because pipeline in Tekton are designed to be generic and re-usable across environments and stages through the application's lifecycle. Pipelines abstract away the specifics of the git source repository and image to be produced as parameters.
-.. There are three tasks listed, with their inputs
+.. There are four tasks listed, with their inputs
 .. The execution order of task is determined by dependencies that are defined between the tasks via inputs and outputs as well as explicit orders that are defined via runAfter.
 
 . Create the pipeline:
@@ -531,7 +532,8 @@ oc get pod
 ----
 NAME                                                           READY   STATUS      RESTARTS   AGE
 build-and-deploy-run-wj26p-apply-manifests-895lv-pod-d88zs     0/2     Completed   0          119s
-build-and-deploy-run-wj26p-build-image-s6l7t-pod-st6gr         0/5     Completed   0          3m24s
+build-and-deploy-run-wj26p-build-image-s6l7t-pod-st6gr         0/3     Completed   0          3m24s
+build-and-deploy-run-wj26p-fetch-repository-6pq54-pod-f8mkt    0/1     Completed   0          5m9s
 build-and-deploy-run-wj26p-update-deployment-k8cbs-pod-bqpxj   0/1     Completed   0          99s
 vote-api-68d8d7fdb-w9vjw                                       1/1     Running     0          92s
 ----
@@ -539,8 +541,8 @@ vote-api-68d8d7fdb-w9vjw                                       1/1     Running  
 Note the following:
 
 * Your `vote-api` pod is now running
-* You have three other, completed, pods. These were the three tasks in your pipeline: *build image*, *apply manifests* and *update deployment*.
-* The tasks get executed as pods - and each step in a task gets executed in its own container. You can tell that the *build image* task had 5 steps.
+* You have four other, completed, pods. These were the three tasks in your pipeline: *build image*, *apply manifests*, *fetch-repository*, and *update deployment*.
+* The tasks get executed as pods - and each step in a task gets executed in its own container. You can tell that the *build image* task had 3 steps.
 
 . Now build the second application. You will use the exact same pipeline - but with different inputs (resources and parameters):
 +
@@ -571,10 +573,12 @@ oc get pod
 ----
 NAME                                                           READY   STATUS        RESTARTS   AGE
 build-and-deploy-run-b8rw8-apply-manifests-h9xzb-pod-9h74n     0/2     Completed     0          42s
-build-and-deploy-run-b8rw8-build-image-8gmtt-pod-95cjm         0/5     Completed     0          105s
+build-and-deploy-run-b8rw8-build-image-8gmtt-pod-95cjm         0/3     Completed     0          105s
+build-and-deploy-run-b8rw8-fetch-repository-6pq54-pod-f8mkt    0/1     Completed     0          120s
 build-and-deploy-run-b8rw8-update-deployment-fh5xk-pod-hhc9f   0/1     Completed     0          15s
 build-and-deploy-run-wj26p-apply-manifests-895lv-pod-d88zs     0/2     Completed     0          6m47s
-build-and-deploy-run-wj26p-build-image-s6l7t-pod-st6gr         0/5     Completed     0          8m12s
+build-and-deploy-run-wj26p-build-image-s6l7t-pod-st6gr         0/3     Completed     0          8m12s
+build-and-deploy-run-wj26p-fetch-repository-6pq54-pod-f8mkt    0/1     Completed     0          8m30s
 build-and-deploy-run-wj26p-update-deployment-k8cbs-pod-bqpxj   0/1     Completed     0          6m27s
 vote-api-68d8d7fdb-w9vjw                                       1/1     Running       0          6m20s
 vote-ui-c867566c5-6jx7j                                        1/1     Running       0          8s
@@ -586,7 +590,7 @@ You see the pods that made up the second pipeline run. And you see the `vote-ui`
 +
 [source,sh]
 ----
-oc get route vote-ui --template='http://{{.spec.host}}'
+oc get route vote-ui --template='http://{{.spec.host}}{{printf "\n"}}'
 ----
 +
 .Sample Output
@@ -627,20 +631,20 @@ spec:
   - apiVersion: tekton.dev/v1beta1
     kind: PipelineRun
     metadata:
-      name: build-deploy-$(params.git-repo-name)-$(uid)
+      name: build-deploy-$(tt.params.git-repo-name)-$(uid)
     spec:
       serviceAccountName: pipeline
       pipelineRef:
         name: build-and-deploy
       params:
       - name: git-url
-        value: $(params.git-repo-url)
+        value: $(tt.params.git-repo-url)
       - name: git-revision
-        value: $(params.git-revision)
+        value: $(tt.params.git-revision)
       - name: image-url
-        value: image-registry.openshift-image-registry.svc:5000/GUID-pipeline/$(params.git-repo-name):latest
+        value: image-registry.openshift-image-registry.svc:5000/GUID-pipeline/$(tt.params.git-repo-name):latest
       - name: deployment-name
-        value: $(params.git-repo-name)
+        value: $(tt.params.git-repo-name)
       workspaces:
       - name: shared-workspace
         volumeClaimTemplate:
@@ -657,9 +661,9 @@ Note the following in this template:
 
 * The trigger template is generic. You can use the same trigger template for the `vote-api` and `vote-ui` applications.
 * The template expects three parameters: `git-repo-url`, `git-revision` and `git-repo-name`. These parameters will be set by the trigger binding that we will create next.
-* It creates two pipeline resources, one of type git that points to the repository that triggered the event. The other one points to the container image to be built (which has the same name as your repository)
-* It creates a pipeline run that uses the generic pipeline `build-and-deploy` and binds the newly created resources for our repo and image.
-* Finally it sets the `deployment-name` variable to the name of the repository that triggered the build.
+* It creates a new PersistentVolumeClaim and binds it to a workspace.
+* It creates a pipeline run that uses the generic pipeline `build-and-deploy` and binds the workspace.
+* Finally it sets the `git-url`, `git-revision`, `image-url`, and `deployment-name` variables.
 
 . Replace the GUID placeholder in the file with your actual GUID:
 +
@@ -839,7 +843,7 @@ oc expose svc el-vote-app
 +
 [source,sh]
 ----
-oc get route el-vote-app --template='http://{{.spec.host}}'
+oc get route el-vote-app --template='http://{{.spec.host}}{{printf "\n"}}'
 ----
 +
 .Sample Output
@@ -909,8 +913,8 @@ If your pipeline is not running after a few seconds you can check the pod logs o
 
 == Wrapup
 
-You have created a simple, three step, pipeline using one existing and two custom tasks.
+You have created a simple, four step pipeline using two existing and two custom tasks.
 
-You tested the generic pipeline by adding pipeline resources and using these pipeline resources in a pipeline run to execute your generic pipeline twice - for two different applications from two different repositories
+You tested the generic pipeline by adding two pipelineruns and using these pipelineruns to execute your generic pipeline twice - for two different applications from two different repositories
 
 And finally you set up triggering so that every push to the repository will trigger a Pipeline Run.
