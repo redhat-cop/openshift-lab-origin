@@ -74,7 +74,6 @@ The Ansible logic for the operator has already been written. You simply take the
 cd $HOME
 git clone https://github.com/redhat-gpte-devopsautomation/ansible-operator-roles
 cd ansible-operator-roles
-# git checkout v1.3.0
 cd $HOME
 ----
 
@@ -406,12 +405,12 @@ Login Succeeded!
 +
 [source,sh]
 ----
-export OPERATOR_VERSION=v1.1.0
+export OPERATOR_VERSION=v1.2.0
 
 # No v in front of the Bundle version
-export BUNDLE_VERSION=1.1.0
+export BUNDLE_VERSION=1.2.0
 
-export CATALOG_VERSION=v1.1.0
+export CATALOG_VERSION=v1.2.0
 ----
 
 . To build on Linux with `podman` instead of `docker` make sure that docker is symlink to podman:
@@ -429,7 +428,7 @@ make docker-build IMG=quay.io/$QUAY_ID/gitea-operator:$OPERATOR_VERSION
 ----
 +
 .Sample Output
-[source,texinfo]
+[source]
 ----
  => [internal] load build definition from Dockerfile                                                                                   0.0s
  => => transferring dockerfile: 355B                                                                                                   0.0s
@@ -467,6 +466,7 @@ make docker-build IMG=quay.io/$QUAY_ID/gitea-operator:$OPERATOR_VERSION
  => exporting to image                                                                                                                 0.1s
  => => exporting layers                                                                                                                0.1s
  => => writing image sha256:e10e9462b5436b223b2bfeee037ffb38180f51dabce451e948c66641563f9f11                                           0.0s
+
  ----
 
 . Push the image to the registry:
@@ -577,22 +577,18 @@ spec:
                 type: string
               postgresqlCpuRequest:
                 description: CPU request for the PostgreSQL database. Default is '200m'.
-                type: object
-                additionalProperties:
-                  anyOf:
-                  - type: integer
-                  - type: string
-                  pattern: "^(\\\\+|-)?(([0-9]+(\\\\.[0-9]*)?)|(\\\\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\\\\+|-)?(([0-9]+(\\\\.[0-9]*)?)|(\\\\.[0-9]+))))?$"
-                  x-kubernetes-int-or-string: true
+                anyOf:
+                - type: integer
+                - type: string
+                pattern: "^(\\\\+|-)?(([0-9]+(\\\\.[0-9]*)?)|(\\\\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\\\\+|-)?(([0-9]+(\\\\.[0-9]*)?)|(\\\\.[0-9]+))))?$"
+                x-kubernetes-int-or-string: true
               postgresqlCpuLimit:
                 description: CPU limit for the PostgreSQL database. Default is '500m'.
-                type: object
-                additionalProperties:
-                  anyOf:
-                  - type: integer
-                  - type: string
-                  pattern: "^(\\\\+|-)?(([0-9]+(\\\\.[0-9]*)?)|(\\\\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\\\\+|-)?(([0-9]+(\\\\.[0-9]*)?)|(\\\\.[0-9]+))))?$"
-                  x-kubernetes-int-or-string: true
+                anyOf:
+                - type: integer
+                - type: string
+                pattern: "^(\\\\+|-)?(([0-9]+(\\\\.[0-9]*)?)|(\\\\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\\\\+|-)?(([0-9]+(\\\\.[0-9]*)?)|(\\\\.[0-9]+))))?$"
+                x-kubernetes-int-or-string: true
 
               giteaServiceName:
                 description: Name of the Gitea Service to be deployed. Defaults to the name of the Gitea custom resource.
@@ -623,22 +619,18 @@ spec:
                 type: string
               giteaCpuRequest:
                 description: CPU request for Gitea. Default is '200m'.
-                type: object
-                additionalProperties:
-                  anyOf:
-                  - type: integer
-                  - type: string
-                  pattern: "^(\\\\+|-)?(([0-9]+(\\\\.[0-9]*)?)|(\\\\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\\\\+|-)?(([0-9]+(\\\\.[0-9]*)?)|(\\\\.[0-9]+))))?$"
-                  x-kubernetes-int-or-string: true
+                anyOf:
+                - type: integer
+                - type: string
+                pattern: "^(\\\\+|-)?(([0-9]+(\\\\.[0-9]*)?)|(\\\\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\\\\+|-)?(([0-9]+(\\\\.[0-9]*)?)|(\\\\.[0-9]+))))?$"
+                x-kubernetes-int-or-string: true
               giteaCpuLimit:
                 description: CPU limit for Gitea. Default is '500m'.
-                type: object
-                additionalProperties:
-                  anyOf:
-                  - type: integer
-                  - type: string
-                  pattern: "^(\\\\+|-)?(([0-9]+(\\\\.[0-9]*)?)|(\\\\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\\\\+|-)?(([0-9]+(\\\\.[0-9]*)?)|(\\\\.[0-9]+))))?$"
-                  x-kubernetes-int-or-string: true
+                anyOf:
+                - type: integer
+                - type: string
+                pattern: "^(\\\\+|-)?(([0-9]+(\\\\.[0-9]*)?)|(\\\\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\\\\+|-)?(([0-9]+(\\\\.[0-9]*)?)|(\\\\.[0-9]+))))?$"
+                x-kubernetes-int-or-string: true
 
               giteaPostgresqlServiceName:
                 description: 'Name of the PostgreSQL service. Only required when PostgreSQL is not set up by the operator. Default: postgresql- followed by the Gitea resource name.'
@@ -989,14 +981,15 @@ export QUAY_ID=<your quay id>
 podman login -u $QUAY_ID quay.io
 ----
 
-. Create the index image - this image contains just the bundle image for the gitea operator:
+. If this is the first time you are creating the catalog image create the image from scratch:
+.. Create the index image - this image contains just the bundle image for the gitea operator:
 +
 [NOTE]
-On macOS you need to add the parameter `--container-tool docker` because `podman` does not exist for on macOS.
+On Linux you need to remove the parameter `--container-tool docker` because on Linux you use `podman` instead of `docker`.
 +
 [source,sh]
 ----
-opm index add --bundles quay.io/$QUAY_ID/gitea-operator-bundle:v$BUNDLE_VERSION --tag quay.io/$QUAY_ID/gitea-catalog:$CATALOG_VERSION
+opm index add --bundles quay.io/$QUAY_ID/gitea-operator-bundle:v$BUNDLE_VERSION --tag quay.io/$QUAY_ID/gitea-catalog:latest --container-tool docker
 ----
 +
 .Sample Output
@@ -1021,11 +1014,61 @@ INFO[0002] running docker build                          bundles="[quay.io/wkulh
 INFO[0002] [docker build -f index.Dockerfile883185803 -t quay.io/wkulhanek/gitea-catalog:v1.1.0 .]  bundles="[quay.io/wkulhanek/gitea-operator-bundle:v1.1.0]"
 ----
 
-. Push the catalog image to the Quay repository (on macOS use `docker` instead of `podman`):
+. If this is a new version of the operator that can be upgraded add the image to the previous version:
+.. Set the previous Catalog version
 +
 [source,sh]
 ----
-podman push quay.io/$QUAY_ID/gitea-catalog:$CATALOG_VERSION
+export CATALOG_VERSION_PREVIOUS=v1.1.0
+----
+
+.. Create the index image - this image contains just the bundle image for the gitea operator:
++
+[NOTE]
+On Linux you need to remove the parameter `--container-tool docker` because on Linux you use `podman` instead of `docker`.
++
+[source,sh]
+----
+opm index add --from-index quay.io/$QUAY_ID/gitea-catalog:$CATALOG_VERSION_PREVIOUS --bundles quay.io/$QUAY_ID/gitea-operator-bundle:v$BUNDLE_VERSION --tag quay.io/$QUAY_ID/gitea-catalog:$CATALOG_VERSION --container-tool docker
+----
++
+.Sample Output
+[source,texinfo]
+----
+INFO[0000] building the index                            bundles="[quay.io/gpte-devops-automation/gitea-operator-bundle:v1.2.0]"
+INFO[0000] Pulling previous image quay.io/gpte-devops-automation/gitea-catalog:v1.1.0 to get metadata  bundles="[quay.io/gpte-devops-automation/gitea-operator-bundle:v1.2.0]"
+INFO[0000] running /usr/local/bin/docker pull quay.io/gpte-devops-automation/gitea-catalog:v1.1.0  bundles="[quay.io/gpte-devops-automation/gitea-operator-bundle:v1.2.0]"
+INFO[0002] running /usr/local/bin/docker pull quay.io/gpte-devops-automation/gitea-catalog:v1.1.0  bundles="[quay.io/gpte-devops-automation/gitea-operator-bundle:v1.2.0]"
+INFO[0004] Getting label data from previous image        bundles="[quay.io/gpte-devops-automation/gitea-operator-bundle:v1.2.0]"
+INFO[0004] running docker inspect                        bundles="[quay.io/gpte-devops-automation/gitea-operator-bundle:v1.2.0]"
+INFO[0004] running docker create                         bundles="[quay.io/gpte-devops-automation/gitea-operator-bundle:v1.2.0]"
+INFO[0005] running docker cp                             bundles="[quay.io/gpte-devops-automation/gitea-operator-bundle:v1.2.0]"
+INFO[0006] running docker rm                             bundles="[quay.io/gpte-devops-automation/gitea-operator-bundle:v1.2.0]"
+INFO[0006] running /usr/local/bin/docker pull quay.io/gpte-devops-automation/gitea-operator-bundle:v1.2.0  bundles="[quay.io/gpte-devops-automation/gitea-operator-bundle:v1.2.0]"
+INFO[0008] running docker create                         bundles="[quay.io/gpte-devops-automation/gitea-operator-bundle:v1.2.0]"
+INFO[0009] running docker cp                             bundles="[quay.io/gpte-devops-automation/gitea-operator-bundle:v1.2.0]"
+INFO[0009] running docker rm                             bundles="[quay.io/gpte-devops-automation/gitea-operator-bundle:v1.2.0]"
+INFO[0009] Could not find optional dependencies file     dir=bundle_tmp900590092 file=bundle_tmp900590092/metadata load=annotations
+INFO[0009] found csv, loading bundle                     dir=bundle_tmp900590092 file=bundle_tmp900590092/manifests load=bundle
+INFO[0009] loading bundle file                           dir=bundle_tmp900590092/manifests file=gitea-operator-controller-manager-metrics-service_v1_service.yaml load=bundle
+INFO[0009] loading bundle file                           dir=bundle_tmp900590092/manifests file=gitea-operator-controller-manager_v1_serviceaccount.yaml load=bundle
+INFO[0009] loading bundle file                           dir=bundle_tmp900590092/manifests file=gitea-operator-manager-config_v1_configmap.yaml load=bundle
+INFO[0009] loading bundle file                           dir=bundle_tmp900590092/manifests file=gitea-operator-metrics-reader_rbac.authorization.k8s.io_v1_clusterrole.yaml load=bundle
+INFO[0009] loading bundle file                           dir=bundle_tmp900590092/manifests file=gitea-operator.clusterserviceversion.yaml load=bundle
+INFO[0009] loading bundle file                           dir=bundle_tmp900590092/manifests file=gpte.opentlc.com_giteas.yaml load=bundle
+INFO[0009] Generating dockerfile                         bundles="[quay.io/gpte-devops-automation/gitea-operator-bundle:v1.2.0]"
+INFO[0009] writing dockerfile: index.Dockerfile357423690  bundles="[quay.io/gpte-devops-automation/gitea-operator-bundle:v1.2.0]"
+INFO[0009] running docker build                          bundles="[quay.io/gpte-devops-automation/gitea-operator-bundle:v1.2.0]"
+INFO[0009] [docker build -f index.Dockerfile357423690 -t quay.io/gpte-devops-automation/gitea-catalog:v1.2.0 .]  bundles="[quay.io/gpte-devops-automation/gitea-operator-bundle:v1.2.0]"
+----
+
+. Tag the image as latest and push both the catalog image tags to the Quay repository (on Linux use `podman` instead of `docker`):
++
+[source,sh]
+----
+docker tag quay.io/$QUAY_ID/gitea-catalog:$CATALOG_VERSION quay.io/$QUAY_ID/gitea-catalog:latest
+docker push quay.io/$QUAY_ID/gitea-catalog:latest
+docker push quay.io/$QUAY_ID/gitea-catalog:$CATALOG_VERSION
 ----
 
 . Make sure that the repos `gitea-catalog`, `gitea-operator-bundle` and `gitea-operator` in your Quay account are public.
@@ -1043,7 +1086,7 @@ metadata:
   namespace: openshift-marketplace
 spec:
   sourceType: grpc
-  image: quay.io/$QUAY_ID/gitea-catalog:$CATALOG_VERSION
+  image: quay.io/$QUAY_ID/gitea-catalog:latest
   displayName: Red Hat GPTE (Gitea)
   publisher: Red Hat GPTE" > ./catalog_source.yaml
 ----
