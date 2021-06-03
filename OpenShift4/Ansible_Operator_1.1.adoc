@@ -430,44 +430,26 @@ make docker-build IMG=quay.io/$QUAY_ID/gitea-operator:$OPERATOR_VERSION
 .Sample Output
 [source]
 ----
- => [internal] load build definition from Dockerfile                                                                                   0.0s
- => => transferring dockerfile: 355B                                                                                                   0.0s
- => [internal] load .dockerignore                                                                                                      0.0s
- => => transferring context: 2B                                                                                                        0.0s
- => [internal] load metadata for quay.io/operator-framework/ansible-operator:v1.6.4                                                    1.4s
- => [1/6] FROM quay.io/operator-framework/ansible-operator:v1.6.4@sha256:214daff0bec0af5efaf8ea9bf8bf0baabd7d91eef262dc0eb9b6c75f0d3  11.4s
- => => resolve quay.io/operator-framework/ansible-operator:v1.6.4@sha256:214daff0bec0af5efaf8ea9bf8bf0baabd7d91eef262dc0eb9b6c75f0d39  0.0s
- => => sha256:2d6fdf6ad7c2ff87841f6726a61f9bcd73d7ddf9b23c3c2356c736cab966551d 5.94kB / 5.94kB                                         0.0s
- => => sha256:4b21dcdd136d133a4df0840e656af2f488c226dd384a98b89ced79064a4081b4 75.55MB / 75.55MB                                       2.5s
- => => sha256:65cf945c2022cb9e8cecf63024ba63a897f03e484823bb7d10a7f7d6e84e515b 262B / 262B                                             0.4s
- => => sha256:214daff0bec0af5efaf8ea9bf8bf0baabd7d91eef262dc0eb9b6c75f0d395bd0 1.36kB / 1.36kB                                         0.0s
- => => sha256:f598d3718615ddf1533312b37cc72db25313a211113e691fc0f94303b7304675 1.99kB / 1.99kB                                         0.0s
- => => sha256:55eda774346862e410811e3fa91cefe805bc11ff46fad425dd1b712709c05bbc 1.79kB / 1.79kB                                         0.4s
- => => sha256:66bebcc24328ebeef0a848c82287a6d9157b1ebf4ce29773e059842f909e8350 11.53kB / 11.53kB                                       0.8s
- => => sha256:0c4d9673485f790335fb51e1b089fbe1f95780cb984454742c6f9770177a0d40 59.51MB / 59.51MB                                       5.9s
- => => sha256:835eee3550ad80d11193cb4090ca8702e7f5f3a80a4d122d09bed7141bd87aa3 9.47kB / 9.47kB                                         1.4s
- => => sha256:ba1cfad250c63a8062718a39cf98c4f88cd5fa9016a3ae00d23fe20717cc25f0 544B / 544B                                             2.0s
- => => sha256:8120f5e0dced290df6f53e21130799b4ba8c9646b30612e7b30641c8b9af78ba 20.69MB / 20.69MB                                       3.3s
- => => extracting sha256:4b21dcdd136d133a4df0840e656af2f488c226dd384a98b89ced79064a4081b4                                              3.6s
- => => extracting sha256:55eda774346862e410811e3fa91cefe805bc11ff46fad425dd1b712709c05bbc                                              0.0s
- => => extracting sha256:65cf945c2022cb9e8cecf63024ba63a897f03e484823bb7d10a7f7d6e84e515b                                              0.0s
- => => extracting sha256:66bebcc24328ebeef0a848c82287a6d9157b1ebf4ce29773e059842f909e8350                                              0.0s
- => => extracting sha256:0c4d9673485f790335fb51e1b089fbe1f95780cb984454742c6f9770177a0d40                                              3.6s
- => => extracting sha256:835eee3550ad80d11193cb4090ca8702e7f5f3a80a4d122d09bed7141bd87aa3                                              0.0s
- => => extracting sha256:ba1cfad250c63a8062718a39cf98c4f88cd5fa9016a3ae00d23fe20717cc25f0                                              0.0s
- => => extracting sha256:8120f5e0dced290df6f53e21130799b4ba8c9646b30612e7b30641c8b9af78ba                                              0.6s
- => [internal] load build context                                                                                                      0.0s
- => => transferring context: 22.56kB                                                                                                   0.0s
- => [2/6] COPY requirements.yml /opt/ansible/requirements.yml                                                                          0.8s
- => [3/6] RUN ansible-galaxy collection install -r /opt/ansible/requirements.yml  && chmod -R ug+rwx /opt/ansible/.ansible             2.6s
- => [4/6] COPY watches.yaml /opt/ansible/watches.yaml                                                                                  0.0s
- => [5/6] COPY roles/ /opt/ansible/roles/                                                                                              0.0s
- => [6/6] COPY playbooks/ /opt/ansible/playbooks/                                                                                      0.0s
- => exporting to image                                                                                                                 0.1s
- => => exporting layers                                                                                                                0.1s
- => => writing image sha256:e10e9462b5436b223b2bfeee037ffb38180f51dabce451e948c66641563f9f11                                           0.0s
-
- ----
+ docker build -t quay.io/gpte-devops-automation/gitea-operator:v1.2.0 .
+[+] Building 0.9s (11/11) FINISHED
+ => [internal] load build definition from Dockerfile                                                                                                                    0.0s
+ => => transferring dockerfile: 355B                                                                                                                                    0.0s
+ => [internal] load .dockerignore                                                                                                                                       0.0s
+ => => transferring context: 2B                                                                                                                                         0.0s
+ => [internal] load metadata for quay.io/operator-framework/ansible-operator:v1.6.4                                                                                     0.7s
+ => [1/6] FROM quay.io/operator-framework/ansible-operator:v1.6.4@sha256:214daff0bec0af5efaf8ea9bf8bf0baabd7d91eef262dc0eb9b6c75f0d395bd0                               0.0s
+ => [internal] load build context                                                                                                                                       0.0s
+ => => transferring context: 29.09kB                                                                                                                                    0.0s
+ => CACHED [2/6] COPY requirements.yml /opt/ansible/requirements.yml                                                                                                    0.0s
+ => CACHED [3/6] RUN ansible-galaxy collection install -r /opt/ansible/requirements.yml  && chmod -R ug+rwx /opt/ansible/.ansible                                       0.0s
+ => CACHED [4/6] COPY watches.yaml /opt/ansible/watches.yaml                                                                                                            0.0s
+ => CACHED [5/6] COPY roles/ /opt/ansible/roles/                                                                                                                        0.0s
+ => CACHED [6/6] COPY playbooks/ /opt/ansible/playbooks/                                                                                                                0.0s
+ => exporting to image                                                                                                                                                  0.0s
+ => => exporting layers                                                                                                                                                 0.0s
+ => => writing image sha256:09e95010f8b0b05a09097d401ceedf68fe6b72c6692759cbd46094d4a48e73b9                                                                            0.0s
+ => => naming to quay.io/gpte-devops-automation/gitea-operator:v1.2.0                                                                                                   0.0s
+----
 
 . Push the image to the registry:
 +
