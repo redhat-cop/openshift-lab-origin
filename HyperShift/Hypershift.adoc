@@ -66,9 +66,9 @@ aws s3api create-bucket --bucket oidc-storage --region us-east-2 --create-bucket
 +
 [source,sh]
 ----
-oc create secret generic hypershift-operator-oidc-provider-s3-credentials --from-file=credentials=$HOME/.aws/credentials --from-literal=bucket=oidc-storage --from-literal=region=us-east-2 -n hypershift
+oc create secret generic hypershift-operator-oidc-provider-s3-credentials -n local-cluster --from-file=credentials=$HOME/.aws/credentials --from-literal=bucket=oidc-storage --from-literal=region=us-east-2
 
-oc label secret hypershift-operator-oidc-provider-s3-credentials cluster.open-cluster-management.io/backup=""
+oc label secret hypershift-operator-oidc-provider-s3-credentials cluster.open-cluster-management.io/backup="" -n local-cluster
 ----
 
 * Create Managed Cluster Addon File `managedclusteraddon.yaml`
@@ -98,19 +98,19 @@ oc apply -f managedclusteraddon.yaml
 +
 [source,sh]
 ----
-oc create namespace aws-hypershift
+oc create namespace hypershift
 ----
 
 * Create AWS Credentials Secret for Hypershift
 +
 [source,sh]
 ----
-oc create secret generic aws-cred -n aws-hypershift --from-literal=baseDomain='sandboxXXXX.opentlc.com' --from-literal=aws_access_key_id='YOUR_ACCESS_KEY_ID' --from-literal=aws_secret_access_key='YOUR_SECRET_ACCESS_KEY' --from-file=pullSecret=~/.pullsecret.json --from-file=ssh-publickey=~/.ssh/wkacmkey.pub --from-file=ssh-privatekey=~/.ssh/wkacmkey.pem
+oc create secret generic aws-cred -n hypershift --from-literal=baseDomain='sandboxXXXX.opentlc.com' --from-literal=aws_access_key_id='YOUR_ACCESS_KEY_ID' --from-literal=aws_secret_access_key='YOUR_SECRET_ACCESS_KEY' --from-file=pullSecret=~/.pullsecret.json --from-file=ssh-publickey=~/.ssh/wkacmkey.pub --from-file=ssh-privatekey=~/.ssh/wkacmkey.pem
 
-oc label secret aws-cred -n aws-hypershift cluster.open-cluster-management.io/backup=""
+oc label secret aws-cred -n hypershift cluster.open-cluster-management.io/backup=""
 ----
 
-* Create YAML file `awsdev.yaml` with cluster properties
+* Create YAML file `development.yaml` with cluster properties
 +
 [source,yaml]
 ----
@@ -118,8 +118,8 @@ oc label secret aws-cred -n aws-hypershift cluster.open-cluster-management.io/ba
 apiVersion: cluster.open-cluster-management.io/v1alpha1
 kind: HypershiftDeployment
 metadata:
-  name: awsdev
-  namespace: aws-hypershift
+  name: development
+  namespace: hypershift
 spec:
   hostingCluster: local-cluster
   hostingNamespace: clusters
@@ -132,7 +132,7 @@ spec:
     platform:
       type: AWS
     pullSecret:
-      name: awsdev-pull-secret    # This secret is created by the controller
+      name: development-pull-secret    # This secret is created by the controller
     release:
       image: quay.io/openshift-release-dev/ocp-release:4.11.8-x86_64
     services:
@@ -150,9 +150,9 @@ spec:
         type: Route
     sshKey: {}
   nodePools:
-  - name: awsdev
+  - name: development
     spec:
-      clusterName: awsdev
+      clusterName: development
       management:
         autoRepair: false
         replace:
@@ -181,7 +181,7 @@ spec:
 +
 [source,sh]
 ----
-oc apply -f awsdev.yaml
+oc apply -f development.yaml
 ----
 
 * Wait until the cluster shows deployed:
@@ -195,7 +195,52 @@ watch -n 10 oc get hypershiftdeployment -n aws-hypershift
 [source]
 ----
 NAME	  TYPE   INFRA                  IAM                    MANIFESTWORK           PROVIDER REF   PROGRESS    AVAILABLE
-awsdev    AWS    ConfiguredAsExpected   ConfiguredAsExpected   ConfiguredAsExpected   AsExpected     Completed   True
+development    AWS    ConfiguredAsExpected   ConfiguredAsExpected   ConfiguredAsExpected   AsExpected     Completed   True
 awsprod   AWS    ConfiguredAsExpected   ConfiguredAsExpected   ConfiguredAsExpected   AsExpected     Partial     True
 ----
 
+== Access cluster(s)
+
+The kubeadmin password and kubeconfig file are stored in secrets in the local-cluster namespace.
+
+* `<clustername>-kubeadmin-password`
+* `<clustername>-admin-kubeconfig`
+
+Get the kubeadmin password:
+
+[source,sh]
+----
+oc get secret development-kubeadmin-password -n local-cluster --template='{{ .data.password }}' | base64 -d ; echo
+----
+
+Get the kubeconfig file and save it as `$HOME/kubeconfig-<clustername>.yaml`
+[source,sh]
+----
+oc get secret development-admin-kubeconfig -n local-cluster --template='{{ .data.kubeconfig }}' | base64 -d >$HOME/kubeconfig-development.yaml
+----
+
+Set the KUBECONFIG variable to point to the new kube config file
+[source,sh]
+----
+export KUBECONFIG=$HOME/kubeconfig-development.yaml
+----
+
+Validate the configuration
+[source,sh]
+----
+oc get co
+----
+
+Get the console URL
+[source,sh]
+----
+oc whoami --show-console
+----
+
+Log into the console using `kubeadmin` and the previously retrieved kubeadmin password.
+
+Unset the KUBECONFIG variable to work back on your local cluster.
+[source,sh]
+----
+unset KUBECONFIG
+----
