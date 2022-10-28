@@ -208,14 +208,222 @@ packageserver-d8996b884-rbssw                     2/2     Running   0          3
 redhat-marketplace-catalog-75cdffd7f7-wgtsd       1/1     Running   0          3h37m
 redhat-operators-catalog-56566fcdc4-n9mpb         1/1     Running   0          3h37m
 ----
++
+Note all the pods that make up a cluster's control plane: etcd, api servers, various cluster operators, Operator Lifecycle Manager pods etc.
 
+. Examine the `Machines` that were created:
++
+[source,sh]
+----
+oc get machines
+----
++
+.Sample Output
+[source,texinfo,options=nowrap]
+----
+NAME                                      CLUSTER             NODENAME                                     PROVIDERID                              PHASE     AGE     VERSION
+development-us-west-2a-7c8bc8fb8d-k4pg9   development-tm6vf   ip-10-0-129-140.us-west-2.compute.internal   aws:///us-west-2a/i-0b4caf06c96757b88   Running   4h19m   4.11.8
+development-us-west-2a-7c8bc8fb8d-nbnmr   development-tm6vf   ip-10-0-138-177.us-west-2.compute.internal   aws:///us-west-2a/i-0b4bbf42f5ff6ba45   Running   4h19m   4.11.8
+----
++
+Note that these are different `Machine` resources than you are used to. These do not live in the `openshift-machine-api` namespace but in the namespace for the Hypershift cluster. Also they are using a different API, namely the `Machine.cluster.x-k8s.io/v1beta1` API and not the `Machine.machine.openshift.io/v1beta1` API that you may be used to.
 
+. Examine one of those machines (replace the machine name with one from your cluster):
++
+[source,sh]
+----
+oc get machine development-us-west-2a-7c8bc8fb8d-k4pg9 -o yaml
+----
++
+Note the following properties:
 
+* *OwnerReferences*: These machines are managed by a MachineSet. And just like the Machine that MachineSet is using the `MachineSet.cluster.x-k8s.io/v1beta1` API and not the OpenShift specific API.
+* *infrastructureRef*: A reference to an `AWSMachine` - you can examine that object for more details about the provisioned infrastructure.
+* *version*: OpenShift Version of the worker node
+* *status*: various status items about the Machine including the internal IP address and information about the `Node` that is associated with that Machine
 
+== Examine the provisioned cluster
 
+A *development* cluster has been set up using Hypershift. In order to connect to this cluster you will need a `kubeconfig` file.
 
+The `kubeconfig` configuration is available as a secret in the hub cluster's namespace - in our case this is the `local-cluster` namespace.
 
+. Retrieve the list of secrets in the `local-cluster` namespace:
++
+[source,sh]
+----
+oc get secret -n local-cluster
+----
++
+.Sample Output
+[source,texinfo,options=nowrap]
+----
+NAME                                               TYPE                                  DATA   AGE
+builder-dockercfg-hcssz                            kubernetes.io/dockercfg               1      4h30m
+builder-token-fv52v                                kubernetes.io/service-account-token   4      4h30m
+default-dockercfg-p42wk                            kubernetes.io/dockercfg               1      4h30m
+default-token-ntnlv                                kubernetes.io/service-account-token   4      4h30m
+deployer-dockercfg-tlpm5                           kubernetes.io/dockercfg               1      4h30m
+deployer-token-95prr                               kubernetes.io/service-account-token   4      4h30m
+development-admin-kubeconfig                       Opaque                                1      4h26m
+development-kubeadmin-password                     Opaque                                1      4h26m
+hypershift-operator-oidc-provider-s3-credentials   Opaque                                3      4h29m
+local-cluster-bootstrap-sa-dockercfg-qplb9         kubernetes.io/dockercfg               1      4h30m
+local-cluster-bootstrap-sa-token-dksxv             kubernetes.io/service-account-token   4      4h30m
+local-cluster-cluster-secret                       Opaque                                3      4h28m
+local-cluster-import                               Opaque                                5      4h30m
+----
 
+. Get the password for the `kubeadmin` user:
++
+[source,sh]
+----
+oc get secret development-kubeadmin-password -n local-cluster --template='{{ .data.password }}' | base64 -d ; echo
+----
++
+.Sample Output
+[source,texinfo]
+----
+m6S8T-WReAm-6eqQr-LTyGS
+----
+
+. Get the kubeconfig configuration for the `system:admin` user:
++
+[source,sh]
+----
+oc get secret development-admin-kubeconfig -n local-cluster --template='{{ .data.kubeconfig }}' | base64 -d ; echo
+----
++
+.Sample Output
+[source,texinfo]
+----
+apiVersion: v1
+clusters:
+- cluster:
+    certificate-authority-data: LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSURFRENDQWZpZ0F3SUJBZ0lJR2ducDhWVEdScGt3RFFZSktvWklodmNOQVFFTEJRQXdKakVTTUJBR0ExVUUKQ3hNSmIzQmxibk5vYVdaME1SQXdEZ1lEVlFRREV3ZHliMjkwTFdOaE1CNFhEVEl5TVRBeU9ERTFOREkxTkZvWApEVE15TVRBeU5URTFOREkxTkZvd0pqRVNNQkFHQTFVRUN4TUpiM0JsYm5Ob2FXWjBNUkF3RGdZRFZRUURFd2R5CmIyOTBMV05oTUlJQklqQU5CZ2txaGtpRzl3MEJBUUVGQUFPQ0FROEFNSUlCQ2dLQ0FRRUEzbVI1LzFmdWRiNlQKSjNueVBJNmphUDNsSzgvYURHV3VhMnMyNmVUNWJ5RnJ6ZW01YzJTS2tvWHMvYzd3N1kzOWVReG43eVFLWmpiNAo1dk1qajM2OEpGdDE4TG5HNnQ0SFRlZUM2YVAzK1pXZ2ZhOUZ2KzcrRDcvdUJQbkxoK2tIK1gycXVXMmlxTktjCm80Y25EV3ZUWnVJT1BSNFo0T0Zxc3VWcEV1OFZMQmZibHRCOTNGVTJTRHEwUzlzemtPb3VuMmhjcjE3ajBsVXAKWnk1enFseGsvU0ZKbklneXhDVEdsZVhOS0ZFOEpYZnVQeXpKQUNFVHZ3U0VRc2tNblBqZkxYaGtDWFNBTXNRYQp3anl6ZGxEVDFhRCszMlRodFFCQ25xbHQ2eGNKM2tXQld4Qnh3M3FSVCtwSEF3MVVEQlg1SGJnbFdMUk81eVlXCnFvelBzRmVPdlFJREFRQUJvMEl3UURBT0JnTlZIUThCQWY4RUJBTUNBcVF3RHdZRFZSMFRBUUgvQkFVd0F3RUIKL3pBZEJnTlZIUTRFRmdRVVZyTUxqalhmZVNzTkZrMDFoSWYxSzdla0Y3NHdEUVlKS29aSWh2Y05BUUVMQlFBRApnZ0VCQUtqQXFPK00zaEFoYml5MlJITWgrdVRQdXcyby83Qjh6eFVZaTBwZjRnMVlrSnV5enBUVC9Rdy9lcGhYClZVNVlYS3NUNW5CeFhGWHNiaGhMNHA3a3had2orU2lBQW1OMzdsbjUxTjFBczI0ZlZZODdhQnFrenZuaEYxdksKQXhiN2hreDdiaDQxOU5Jc0VHVlN6SUlORG8ydlkxWnNJdnJKeHhobW5BUkpja1lxVTBJVytpZUc0MkNreGdMTwprNEV2UzZEOVpyRHdMWlRuR2Juck9Dcis1dmI2ZS9HZVI1OHVnRnRFZzBnN0RJRlVmMUloK216ZzBJY2VCMkxLCll5VjNWZmF3eGRoZjZwS3VYcFlFcTllQmNjU3hLaW1JdHhQeG1TK2cwdU0xL2loUUQ4NTVCQXVqRDZYSTNsYi8KOGdZL3lnRm16dTdsd0hNaFF4WGUxZWlzL2l3PQotLS0tLUVORCBDRVJUSUZJQ0FURS0tLS0tCg==
+    server: https://ad693fd93879d4d48a3f3086f1af527e-99b9e11c4914ece8.elb.us-east-2.amazonaws.com:6443
+  name: cluster
+
+  [... output omitted ...]
+----
+
+. Now luckily the environment already has this information available.
++
+Set your `KUBECONFIG` environment variable to the kubeconfig file that has been set up on your system:
++
+[source,sh]
+----
+export KUBECONFIG=$HOME/.kube/development.kubeconfig
+----
+
+. Now explore the `development` cluster:
++
+[source,sh]
+----
+oc get nodes
+----
++
+.Sample Output
+[source,texinfo,options=nowrap]
+----
+NAME                                         STATUS   ROLES    AGE     VERSION
+ip-10-0-129-140.us-west-2.compute.internal   Ready    worker   4h32m   v1.24.0+dc5a2fd
+ip-10-0-138-177.us-west-2.compute.internal   Ready    worker   4h32m   v1.24.0+dc5a2fd
+----
++
+Note that there are only two `worker` nodes, no `master` nodes. That's because the control plane for this cluster is hosted on the hub cluster as you previously explored.
+
+. Explore the cluster operators:
++
+[source,sh]
+----
+oc get co
+----
++
+.Sample Output
+[source,texinfo,options=nowrap]
+----
+[lab-user@bastion ~]$ oc get co
+NAME                                       VERSION   AVAILABLE   PROGRESSING   DEGRADED   SINCE   MESSAGE
+console                                    4.11.8    True        False         False      4h29m
+csi-snapshot-controller                    4.11.8    True        False         False      4h30m
+dns                                        4.11.8    True        False         False      4h29m
+image-registry                             4.11.8    True        False         False      4h29m
+ingress                                    4.11.8    True        False         False      4h29m
+insights                                   4.11.8    True        False         False      4h31m
+kube-apiserver                             4.11.8    True        False         False      4h36m
+kube-controller-manager                    4.11.8    True        False         False      4h36m
+kube-scheduler                             4.11.8    True        False         False      4h36m
+kube-storage-version-migrator              4.11.8    True        False         False      4h31m
+monitoring                                 4.11.8    True        False         False      4h28m
+network                                    4.11.8    True        False         False      4h35m
+openshift-apiserver                        4.11.8    True        False         False      4h36m
+openshift-controller-manager               4.11.8    True        False         False      4h36m
+openshift-samples                          4.11.8    True        False         False      4h29m
+operator-lifecycle-manager                 4.11.8    True        False         False      4h36m
+operator-lifecycle-manager-catalog         4.11.8    True        False         False      4h36m
+operator-lifecycle-manager-packageserver   4.11.8    True        False         False      4h36m
+service-ca                                 4.11.8    True        False         False      4h31m
+storage                                    4.11.8    True        False         False      4h27m
+----
++
+Note that there a quite a few less cluster operators on a Hypershift cluster than on a regular OpenShift cluster. This is of course because the control plane is not managed by the cluster operators but by Hypershift.
+
+. Get the URL of the OpenShift Console
++
+[source,sh]
+----
+oc whoami --show-console
+----
++
+.Sample Output
+[source,texinfo]
+----
+https://console-openshift-console.apps.development.rrjmf.sandbox2589.opentlc.com
+----
+
+. In a web browser navigate to this URL and log in as `kubeadmin` using the kubeadmin password you retrieved earlier. You can also find this kubeadmin password by running the following command:
++
+[source,sh]
+----
+cat $HOME/.kube/development.kubeadmin-password; echo
+----
+
+. Navigate around the managed cluster and notice that it looks just like a regular OpenShift Cluster.
+
+. Close the Console Browser window and switch back to your hub cluster by unsetting the `KUBECONFIG` variable.
++
+[source,sh]
+----
+unset KUBECONFIG
+----
+
+== Explore the Hub Cluster Console
+
+The last section in this introductory lab is to examine the hub cluster.
+
+. Retrieve the Console URL (or refer to the e-mail you got when you provisioned the environment).
++
+[source,sh]
+----
+oc whoami -show-console
+----
++
+.Sample Output
+[source,texinfo]
+----
+https://console-openshift-console.apps.cluster-rrjmf.sandbox2589.opentlc.com
+----
+
+. Open this URL in a browser and log into the console using the `admin` user and the password from the welcome e-mail.
+
+. Notice that in the top left corner you see a drop down menu that reads *local-cluster*. This signifies that you are operating on the local cluster - your hub cluster.
+. Click the *local-cluster* dropdown and select *All Clusters*. This opens the (simplified version of the) Red Hat Advanced Cluster Management for Kubernetes console.
+. If not already there click on *Infrastructure* on the left and then select *Clusters*. You will see that you have two clusters, the *local-cluster* which is also the *Hub* cluster and the *development* cluster that uses *Hypershift* as its infrastructure.
+. Click on the *development* cluster and explore the information available. Note that on the *Nodes* tab you also see the two worker nodes that have been provisioned.
+ 
 = Next steps
+
+This concludes the exploratory section of this lab. 
 
 Follow https://https://github.com/redhat-cop/openshift-lab-origin/blob/master/HyperShift/Deploy_Cluster.adoc[Deploy a cluster using HyperShift] to deploy a new cluster into your environment using HyperShift.
