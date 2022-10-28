@@ -4,6 +4,13 @@
 
 This Red Hat Product Demo System catalog item allows you to use, demonstrate and learn *Hypershift* - also known as *Hosted Control Planes*.
 
+[TIP]
+====
+If you received a link to this document and need an environment then go to the https://demo.redhat.com[RedHat Product Demo System (Beta)] and find the catalog item *Red Hat Advanced Cluster Management with HyperShift* in the *Demos* folder. You can also type *hypershift* into the search box to find the catalog item.
+
+Make sure you provision an environment before continuing. Provisioning should take approximately an hour.
+====
+
 Hypershift is a way to deploy the Control Plane of Red Hat OpenShift Container Platform clusters as pods on other clusters dramatically increasing the time it takes to provision a new cluster. Worker nodes are still deployed as virtual machines and managed using the new `Machine.cluster.x-k8s.io/v1beta1` API.
 
 Hypershift is currently in Tech Preview on both Red Hat Advanced Cluster Management for Kubernetes versions 2.5 and 2.6.
