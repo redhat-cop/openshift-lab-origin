@@ -1,4 +1,4 @@
-= Deploying Clusters using HyperShift
+= HyperShift Setup
 
 == Overview
 

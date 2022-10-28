@@ -1,4 +1,4 @@
-= Deploying Applications to Hypershift managee clusters
+= Deploying Applications to Hypershift managed clusters
 
 == Overview
 
