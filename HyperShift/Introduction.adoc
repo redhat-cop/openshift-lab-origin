@@ -1,246 +1,221 @@
 = Deploying Clusters using HyperShift
 
-== Docs
+== Introduction
+
+This Red Hat Product Demo System catalog item allows you to use, demonstrate and learn *Hypershift* - also known as *Hosted Control Planes*.
+
+Hypershift is a way to deploy the Control Plane of Red Hat OpenShift Container Platform clusters as pods on other clusters dramatically increasing the time it takes to provision a new cluster. Worker nodes are still deployed as virtual machines and managed using the new `Machine.cluster.x-k8s.io/v1beta1` API.
+
+Hypershift is currently in Tech Preview on both Red Hat Advanced Cluster Management for Kubernetes versions 2.5 and 2.6.
+
+The catalog item deploys the following environment::
+
+* OpenShift Container Platform 4.11.
+* Red Hat Advanced Cluster Management for Kubernetes (RHACM) 2.6 installed and configured.
+* Technology Preview for HyperShift enabled and configured on RHACM.
+* A small cluster has been pre-deployed using HyperShift.
+
+The instructions cover the following scenarios:
+
+* Explore the pre-installed environment (this document)
+* https://https://github.com/redhat-cop/openshift-lab-origin/blob/master/HyperShift/Deploy_Cluster.adoc[Deploy a cluster using HyperShift].
+* https://github.com/redhat-cop/openshift-lab-origin/blob/master/HyperShift/Deploy_Application.adoc[Deploy an application to both clusters using RHACM].
+* https://github.com/redhat-cop/openshift-lab-origin/blob/master/HyperShift/Hypershift_Setup.adoc[Background on how HyperShift was installed and configured on the environment].
+
+== Documentation
+
+Further documentation on Hypershift can be found at the following links:
 
 * RHACM 2.5: https://access.redhat.com/documentation/en-us/red_hat_advanced_cluster_management_for_kubernetes/2.5/html/clusters/managing-your-clusters#hosted-control-plane-intro
 * RHACM 2.6: https://access.redhat.com/documentation/en-us/red_hat_advanced_cluster_management_for_kubernetes/2.6/html/multicluster_engine/multicluster_engine_overview#hosted-control-planes-intro
 
-== Prerequisites
+== Information you will need
 
-* Deploy an OpenShift 4.11 cluster
-* On that cluster install Advanced Cluster Manager (operator and operand)
-* Get your AWS credentials ready
-** AWS Access Key
-** AWS Secret Access Key
-** Top level domain (sandboxXXXX.opentlc.com)
-** Private and public key (e.g. ~/.ssh/${GUID}key.pem and ~/.ssh/${GUID}key.pub)
-** OpenShift Pull Secret in a file `pullsecret.json`
-* Set up AWS Credentials in `~/.aws/credentials`
+Once your environment has been provisioned you will receive an e-mail with the following information:
+
+[source,text]
+----
+Openshift Console: https://console-openshift-console.apps.cluster-rrjmf.sandbox2589.opentlc.com
+
+Openshift API for command line 'oc' client: https://api.cluster-rrjmf.sandbox2589.opentlc.com:6443
+
+Download oc client from http://d3s3zqyaz8cp2d.cloudfront.net/pub/openshift-v4/clients/ocp/stable-4.11/openshift-client-linux.tar.gz
+
+HTPasswd Authentication is enabled on this cluster.
+
+Users user1 .. user2 are created with password openshift
+
+User admin with password r3dh4t1! is cluster admin.
+
+You can access Gitea via the URL https://gitea.apps.cluster-rrjmf.sandbox2589.opentlc.com
+
+The Gitea admin username is 'opentlc-mgr'.
+
+The Gitea admin password is 'openshift'.
+
+Gitea users were created, from user1 to user2 with the password 'openshift'
+
+Your RHACM console is available at:
+https://multicloud-console.apps.cluster-rrjmf.sandbox2589.opentlc.com
+
+You can access your bastion via SSH: ssh lab-user@bastion.rrjmf.sandbox2589.opentlc.com
+
+Make sure you use the username 'lab-user' and the password '2gQ8Lmqpdg56' when prompted.
+----
+
+Make note of the following information:
+
+* The SSH command to connect to you environment's bastion's VM
+* The password to be used with user `lab-user` on the bastion VM
+* Also the OpenShift Console URL along with the credentials for the `admin` user.
+
+There is plenty more information below what is illustrated above. But all of those properties have already been set up in your environment.
+
+== Explore environment
+
+Let's explore what has been set up in the environment.
+
+. Log into the bastion VM using the provided SSH command and password.
 +
-[source]
+.Example (use your own URL)
+[source,sh]
 ----
-[default]
-aws_access_key_id = YOUR_AWS_ACCESS_KEY_ID
-aws_secret_access_key = YOUR_AWS_SECRET_ACCESS_KEY
+ssh lab-user@bastion.rrjmf.sandbox2589.opentlc.com
 ----
 
-* Enable the HyperShift Preview Tech Preview
+. On the bastion VM examine the hub cluster:
 +
 [source,sh]
 ----
-oc patch multiclusterengine -n multicluster-engine --type=merge -p '{"spec":{"overrides":{"components":[{"name":"hypershift-preview","enabled": true}]}}}'
-----
-
-* Deploy Hypershift
-** Create a file `import-hub.yaml`
-+
-[source,yaml]
-----
----
-apiVersion: cluster.open-cluster-management.io/v1
-kind: ManagedCluster
-metadata:
-  labels:
-    local-cluster: "true"
-  name: local-cluster
-spec:
-  hubAcceptsClient: true
-  leaseDurationSeconds: 60
-----
-
-** Create the managed cluster
-+
-[source,sh]
-----
-oc apply -f import-hub.yaml
-----
-
-* Create an AWS S3 Bucket to store OICD Documents
-+
-[source,sh]
-----
-aws s3api create-bucket --bucket oidc-storage --region us-east-2 --create-bucket-configuration LocationConstraint=us-east-2
-----
-
-* Create a secret with AWS credential information in the hypershift namespace
-+
-[source,sh]
-----
-oc create secret generic hypershift-operator-oidc-provider-s3-credentials -n local-cluster --from-file=credentials=$HOME/.aws/credentials --from-literal=bucket=oidc-storage --from-literal=region=us-east-2
-
-oc label secret hypershift-operator-oidc-provider-s3-credentials cluster.open-cluster-management.io/backup="" -n local-cluster
-----
-
-* Create Managed Cluster Addon File `managedclusteraddon.yaml`
-+
-[source,yaml]
-----
----
-apiVersion: addon.open-cluster-management.io/v1alpha1
-kind: ManagedClusterAddOn
-metadata:
-  name: hypershift-addon
-  namespace: local-cluster
-spec:
-  installNamespace: open-cluster-management-agent-addon
-----
-
-** Create the managed cluster addon
-+
-[source,sh]
-----
-oc apply -f managedclusteraddon.yaml
-----
-
-== Deploy a cluster using Hypershift
-
-* Create namespace to collect resources
-+
-[source,sh]
-----
-oc create namespace hypershift
-----
-
-* Create AWS Credentials Secret for Hypershift
-+
-[source,sh]
-----
-oc create secret generic aws-cred -n hypershift --from-literal=baseDomain='sandboxXXXX.opentlc.com' --from-literal=aws_access_key_id='YOUR_ACCESS_KEY_ID' --from-literal=aws_secret_access_key='YOUR_SECRET_ACCESS_KEY' --from-file=pullSecret=~/.pullsecret.json --from-file=ssh-publickey=~/.ssh/wkacmkey.pub --from-file=ssh-privatekey=~/.ssh/wkacmkey.pem
-
-oc label secret aws-cred -n hypershift cluster.open-cluster-management.io/backup=""
-----
-
-* Create YAML file `development.yaml` with cluster properties
-+
-[source,yaml]
-----
----
-apiVersion: cluster.open-cluster-management.io/v1alpha1
-kind: HypershiftDeployment
-metadata:
-  name: development
-  namespace: hypershift
-spec:
-  hostingCluster: local-cluster
-  hostingNamespace: clusters
-  hostedClusterSpec:
-    networking:
-      machineCIDR: 10.0.0.0/16    # Default
-      networkType: OpenShiftSDN
-      podCIDR: 10.132.0.0/14      # Default
-      serviceCIDR: 172.31.0.0/16  # Default
-    platform:
-      type: AWS
-    pullSecret:
-      name: development-pull-secret    # This secret is created by the controller
-    release:
-      image: quay.io/openshift-release-dev/ocp-release:4.11.8-x86_64
-    services:
-    - service: APIServer
-      servicePublishingStrategy:
-        type: LoadBalancer
-    - service: OAuthServer
-      servicePublishingStrategy:
-        type: Route
-    - service: Konnectivity
-      servicePublishingStrategy:
-        type: Route
-    - service: Ignition
-      servicePublishingStrategy:
-        type: Route
-    sshKey: {}
-  nodePools:
-  - name: development
-    spec:
-      clusterName: development
-      management:
-        autoRepair: false
-        replace:
-          rollingUpdate:
-            maxSurge: 1
-            maxUnavailable: 0
-          strategy: RollingUpdate
-        upgradeType: Replace
-      platform:
-        aws:
-          instanceType: m5.large
-        type: AWS
-      release:
-        image: quay.io/openshift-release-dev/ocp-release:4.11.8-x86_64
-      replicas: 2
-  infrastructure:
-    cloudProvider:
-      name: aws-cred
-    configure: True
-    platform:
-      aws:
-        region: us-west-2
-----
-
-* Deploy the cluster
-+
-[source,sh]
-----
-oc apply -f development.yaml
-----
-
-* Wait until the cluster shows deployed:
-+
-[source,sh]
-----
-watch -n 10 oc get hypershiftdeployment -n aws-hypershift
+oc get nodes
 ----
 +
 .Sample Output
-[source]
+[source,texinfo,options=nowrap]
 ----
-NAME	  TYPE   INFRA                  IAM                    MANIFESTWORK           PROVIDER REF   PROGRESS    AVAILABLE
-development    AWS    ConfiguredAsExpected   ConfiguredAsExpected   ConfiguredAsExpected   AsExpected     Completed   True
-awsprod   AWS    ConfiguredAsExpected   ConfiguredAsExpected   ConfiguredAsExpected   AsExpected     Partial     True
+NAME                                         STATUS   ROLES    AGE     VERSION
+ip-10-0-131-232.us-east-2.compute.internal   Ready    worker   3h55m   v1.24.0+dc5a2fd
+ip-10-0-132-249.us-east-2.compute.internal   Ready    master   4h2m    v1.24.0+dc5a2fd
+ip-10-0-209-203.us-east-2.compute.internal   Ready    worker   3h55m   v1.24.0+dc5a2fd
+ip-10-0-215-237.us-east-2.compute.internal   Ready    worker   3h55m   v1.24.0+dc5a2fd
+ip-10-0-251-50.us-east-2.compute.internal    Ready    master   4h3m    v1.24.0+dc5a2fd
+ip-10-0-254-250.us-east-2.compute.internal   Ready    master   4h3m    v1.24.0+dc5a2fd
 ----
 
-== Access cluster(s)
+. You will see that your hub cluster has three control plane nodes (`master`) and three worker nodes (`worker`).
 
-The kubeadmin password and kubeconfig file are stored in secrets in the local-cluster namespace.
-
-* `<clustername>-kubeadmin-password`
-* `<clustername>-admin-kubeconfig`
-
-Get the kubeadmin password:
-
+. Now switch to the project `hypershift`
++
 [source,sh]
 ----
-oc get secret development-kubeadmin-password -n local-cluster --template='{{ .data.password }}' | base64 -d ; echo
+oc project hypershift
 ----
 
-Get the kubeconfig file and save it as `$HOME/kubeconfig-<clustername>.yaml`
+. This is the project that has been set up to hold all Hypershift related resources.
++
+Get a list of deployed Hypershift environments:
++
 [source,sh]
 ----
-oc get secret development-admin-kubeconfig -n local-cluster --template='{{ .data.kubeconfig }}' | base64 -d >$HOME/kubeconfig-development.yaml
+oc get hypershiftdeployments
+----
++
+.Sample Output
+[source,texinfo,options=nowrap]
+----
+NAME          TYPE   INFRA                  IAM                    MANIFESTWORK           PROVIDER REF   PROGRESS    AVAILABLE
+development   AWS    ConfiguredAsExpected   ConfiguredAsExpected   ConfiguredAsExpected   AsExpected     Completed   True
+----
++
+[NOTE]
+====
+If your environment just finished provisioning you may see that the Hypershift Deployment is still progressing. In that case the output will look something like this:
+
+[source,texinfo,options=nowrap]
+----
+NAMESPACE    NAME          TYPE   INFRA                  IAM                    MANIFESTWORK           PROVIDER REF   PROGRESS   AVAILABLE
+hypershift   development   AWS    ConfiguredAsExpected   ConfiguredAsExpected   ConfiguredAsExpected   AsExpected     Partial    True
 ----
 
-Set the KUBECONFIG variable to point to the new kube config file
+In that case wait until the Hypershift Deployment shows that Progress is *Completed*.
+====
+
+. Examine the Hypershift Deployment:
++
 [source,sh]
 ----
-export KUBECONFIG=$HOME/kubeconfig-development.yaml
+oc describe hd development
 ----
++
+You will see *a lot* of information about this cluster. Note the following items:
 
-Validate the configuration
+* *Etcd*: You will see that the ETCD storage is backed by a `PersistentVolumeClaim` on the hub cluster.
+* *Networking*: You will see the various `CIDR` blocks for IP addresses for the cluster. You will also see that the network type for this environment has been set to `OVNKubernetes`.
+* *Platform/AWS*: Properties about the hosting platform (only AWS is supported in the Tech Preview). You will see that your Hypershift cluster has been deployed in the `us-west-2a` zone in the region `us-west-2`. Note that this is only true for worker nodes and networking infrastructure like Elastic Load Balancers. The control plane is entirely running as pods on the hub cluster. We will explore that a little bit later.
+* *Release/Image*: The OpenShift release that was installed.
+* *Services*: which components of OpenShift have been set up with which properties.
+* *Hosting Cluster*: which cluster is hosting the control plane for this cluster. In our case this is the `local-cluster` - also known as the hub cluster.
+* *Infrastructure*: More details about the (AWS) infrastructure that was used.
+* *Node Pools*: these are the pools of worker nodes that have been provisioned. For this environment only one worker pool named `development-us-west-2a` has been created with 2 worker node replicas. Again there is a release image specified for the worker nodes.
++
+In the next lab you will set up another, production, cluster that will have some different properties - and two node pools.
+
+. Switch to the project `clusters-development` which holds all the resources for this `development` cluster.
++
 [source,sh]
 ----
-oc get co
+oc project clusters-development
 ----
 
-Get the console URL
+. List the pods in this project:
++
 [source,sh]
 ----
-oc whoami --show-console
+oc get pod
+----
++
+.Sample Output
+[source,texinfo,options=nowrap]
+----
+NAME                                              READY   STATUS    RESTARTS   AGE
+capi-provider-5d77d9bd86-g7fzh                    2/2     Running   0          3h39m
+catalog-operator-5885cf46f5-lsjzs                 2/2     Running   0          3h37m
+certified-operators-catalog-7f67dfdd77-sqgxr      1/1     Running   0          3h37m
+cluster-api-545466c99b-brqn5                      1/1     Running   0          3h39m
+cluster-autoscaler-69cfc5fc47-8hbmq               1/1     Running   0          3h38m
+cluster-network-operator-5d98dfd498-7x964         1/1     Running   0          3h37m
+cluster-policy-controller-6bcd98fb5-mflvl         1/1     Running   0          3h37m
+cluster-version-operator-795778675-hmdf5          1/1     Running   0          3h37m
+community-operators-catalog-74454d659c-zc67b      1/1     Running   0          3h37m
+control-plane-operator-649cc79bf4-564jj           2/2     Running   0          3h39m
+etcd-0                                            1/1     Running   0          3h38m
+hosted-cluster-config-operator-784ff8f67d-bg7n6   1/1     Running   0          3h37m
+ignition-server-65847cb4cf-99dsg                  1/1     Running   0          3h38m
+ingress-operator-854fbcc9bd-pqrt9                 3/3     Running   0          3h37m
+konnectivity-agent-768557489c-zd72d               1/1     Running   0          3h38m
+konnectivity-server-5c6c44578f-wrxm6              1/1     Running   0          3h38m
+kube-apiserver-6ccf49fc75-4sq2r                   5/5     Running   0          3h38m
+kube-controller-manager-5cdd4494d5-t4nkr          2/2     Running   0          3h31m
+kube-scheduler-768dd57f48-6z8q5                   1/1     Running   0          3h37m
+machine-approver-5b79b89974-8ql98                 1/1     Running   0          3h38m
+oauth-openshift-6c66dcb46-9pbll                   2/2     Running   0          3h36m
+olm-operator-868bdd99d4-4fsww                     2/2     Running   0          3h37m
+openshift-apiserver-5bf7c65998-ncfkr              2/2     Running   0          3h31m
+openshift-controller-manager-fcf9f96f7-2q7qp      1/1     Running   0          3h37m
+openshift-oauth-apiserver-8674b79648-9k47j        1/1     Running   0          3h37m
+ovnkube-master-0                                  6/6     Running   0          3h35m
+packageserver-d8996b884-rbssw                     2/2     Running   0          3h37m
+redhat-marketplace-catalog-75cdffd7f7-wgtsd       1/1     Running   0          3h37m
+redhat-operators-catalog-56566fcdc4-n9mpb         1/1     Running   0          3h37m
 ----
 
-Log into the console using `kubeadmin` and the previously retrieved kubeadmin password.
 
-Unset the KUBECONFIG variable to work back on your local cluster.
-[source,sh]
-----
-unset KUBECONFIG
-----
+
+
+
+
+
+
+= Next steps
+
+Follow https://https://github.com/redhat-cop/openshift-lab-origin/blob/master/HyperShift/Deploy_Cluster.adoc[Deploy a cluster using HyperShift] to deploy a new cluster into your environment using HyperShift.
