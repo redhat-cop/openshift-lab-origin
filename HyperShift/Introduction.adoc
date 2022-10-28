@@ -18,7 +18,7 @@ The catalog item deploys the following environment::
 The instructions cover the following scenarios:
 
 * Explore the pre-installed environment (this document)
-* https://https://github.com/redhat-cop/openshift-lab-origin/blob/master/HyperShift/Deploy_Cluster.adoc[Deploy a cluster using HyperShift].
+* https://github.com/redhat-cop/openshift-lab-origin/blob/master/HyperShift/Deploy_Cluster.adoc[Deploy a cluster using HyperShift].
 * https://github.com/redhat-cop/openshift-lab-origin/blob/master/HyperShift/Deploy_Application.adoc[Deploy an application to both clusters using RHACM].
 * https://github.com/redhat-cop/openshift-lab-origin/blob/master/HyperShift/Hypershift_Setup.adoc[Background on how HyperShift was installed and configured on the environment].
 
@@ -426,4 +426,4 @@ https://console-openshift-console.apps.cluster-rrjmf.sandbox2589.opentlc.com
 
 This concludes the exploratory section of this lab. 
 
-Follow https://https://github.com/redhat-cop/openshift-lab-origin/blob/master/HyperShift/Deploy_Cluster.adoc[Deploy a cluster using HyperShift] to deploy a new cluster into your environment using HyperShift.
+Follow https://github.com/redhat-cop/openshift-lab-origin/blob/master/HyperShift/Deploy_Cluster.adoc[Deploy a cluster using HyperShift] to deploy a new cluster into your environment using HyperShift.
