@@ -7,134 +7,45 @@
 
 == Prerequisites
 
-* Deploy an OpenShift 4.11 cluster
-* On that cluster install Advanced Cluster Manager (operator and operand)
-* Get your AWS credentials ready
-** AWS Access Key
-** AWS Secret Access Key
-** Top level domain (sandboxXXXX.opentlc.com)
-** Private and public key (e.g. ~/.ssh/${GUID}key.pem and ~/.ssh/${GUID}key.pub)
-** OpenShift Pull Secret in a file `pullsecret.json`
-* Set up AWS Credentials in `~/.aws/credentials`
-+
-[source]
-----
-[default]
-aws_access_key_id = YOUR_AWS_ACCESS_KEY_ID
-aws_secret_access_key = YOUR_AWS_SECRET_ACCESS_KEY
-----
+* A deployed environment from https://demo.redhat.com[Red Hat Product Demo System (Beta)].
+* An understanding of the https://github.com/redhat-cop/openshift-lab-origin/blob/master/HyperShift/Introduction.adoc[Introduction] lab
 
-* Enable the HyperShift Preview Tech Preview
+== Overview
+
+Now that you have an environment with the HyperShift Technology Preview enabled it's time to deploy your first cluster. You will see that is it both easy and fast to create a new cluster using this approach.
+
+Right now the only way to deploy a new cluster is by creating a YAML manifest via the command line - there is no capability in the console yet.
+
+== Deploy a new cluster
+
+In order to deploy a new cluster you need to create a Kubernetes resource of kind `HypershiftDeployment`.
+
+. Log into your Bastion VM if you are not already logged in - the instructions are in the welcome e-mail that you got when you provisioned the environment.
+. Create a new YAML file `production.yaml` that will deploy your "production" cluster. It will be similar to the development cluster except that it will be deployed in 2 Zones rather than just one.
 +
 [source,sh]
-----
-oc patch multiclusterengine -n multicluster-engine --type=merge -p '{"spec":{"overrides":{"components":[{"name":"hypershift-preview","enabled": true}]}}}'
-----
-
-* Deploy Hypershift
-** Create a file `import-hub.yaml`
-+
-[source,yaml]
-----
----
-apiVersion: cluster.open-cluster-management.io/v1
-kind: ManagedCluster
-metadata:
-  labels:
-    local-cluster: "true"
-  name: local-cluster
-spec:
-  hubAcceptsClient: true
-  leaseDurationSeconds: 60
-----
-
-** Create the managed cluster
-+
-[source,sh]
-----
-oc apply -f import-hub.yaml
-----
-
-* Create an AWS S3 Bucket to store OICD Documents
-+
-[source,sh]
-----
-aws s3api create-bucket --bucket oidc-storage --region us-east-2 --create-bucket-configuration LocationConstraint=us-east-2
-----
-
-* Create a secret with AWS credential information in the hypershift namespace
-+
-[source,sh]
-----
-oc create secret generic hypershift-operator-oidc-provider-s3-credentials -n local-cluster --from-file=credentials=$HOME/.aws/credentials --from-literal=bucket=oidc-storage --from-literal=region=us-east-2
-
-oc label secret hypershift-operator-oidc-provider-s3-credentials cluster.open-cluster-management.io/backup="" -n local-cluster
-----
-
-* Create Managed Cluster Addon File `managedclusteraddon.yaml`
-+
-[source,yaml]
-----
----
-apiVersion: addon.open-cluster-management.io/v1alpha1
-kind: ManagedClusterAddOn
-metadata:
-  name: hypershift-addon
-  namespace: local-cluster
-spec:
-  installNamespace: open-cluster-management-agent-addon
-----
-
-** Create the managed cluster addon
-+
-[source,sh]
-----
-oc apply -f managedclusteraddon.yaml
-----
-
-== Deploy a cluster using Hypershift
-
-* Create namespace to collect resources
-+
-[source,sh]
-----
-oc create namespace hypershift
-----
-
-* Create AWS Credentials Secret for Hypershift
-+
-[source,sh]
-----
-oc create secret generic aws-cred -n hypershift --from-literal=baseDomain='sandboxXXXX.opentlc.com' --from-literal=aws_access_key_id='YOUR_ACCESS_KEY_ID' --from-literal=aws_secret_access_key='YOUR_SECRET_ACCESS_KEY' --from-file=pullSecret=~/.pullsecret.json --from-file=ssh-publickey=~/.ssh/wkacmkey.pub --from-file=ssh-privatekey=~/.ssh/wkacmkey.pem
-
-oc label secret aws-cred -n hypershift cluster.open-cluster-management.io/backup=""
-----
-
-* Create YAML file `development.yaml` with cluster properties
-+
-[source,yaml]
 ----
 ---
 apiVersion: cluster.open-cluster-management.io/v1alpha1
 kind: HypershiftDeployment
 metadata:
-  name: development
+  name: production <1>
   namespace: hypershift
 spec:
   hostingCluster: local-cluster
   hostingNamespace: clusters
   hostedClusterSpec:
     networking:
-      machineCIDR: 10.0.0.0/16    # Default
-      networkType: OpenShiftSDN
-      podCIDR: 10.132.0.0/14      # Default
-      serviceCIDR: 172.31.0.0/16  # Default
+      machineCIDR: 10.0.0.0/16 <2>
+      networkType: OVNKubernetes <3>
+      podCIDR: 10.132.0.0/14 <2>
+      serviceCIDR: 172.31.0.0/16 <2>
     platform:
       type: AWS
     pullSecret:
-      name: development-pull-secret    # This secret is created by the controller
+      name: production-pull-secret <4>
     release:
-      image: quay.io/openshift-release-dev/ocp-release:4.11.8-x86_64
+      image: quay.io/openshift-release-dev/ocp-release:4.11.8-x86_64 <5>
     services:
     - service: APIServer
       servicePublishingStrategy:
@@ -150,9 +61,27 @@ spec:
         type: Route
     sshKey: {}
   nodePools:
-  - name: development
+  - name: production-us-west-2b <6>
     spec:
-      clusterName: development
+      clusterName: production
+      management:
+        autoRepair: false
+        replace:
+          rollingUpdate:
+            maxSurge: 1
+            maxUnavailable: 0
+          strategy: RollingUpdate
+        upgradeType: Replace
+      platform:
+        aws:
+          instanceType: m5.large <7>
+        type: AWS
+      release:
+        image: quay.io/openshift-release-dev/ocp-release:4.11.8-x86_64
+      replicas: 1
+  - name: production-us-west-2c
+    spec:
+      clusterName: production
       management:
         autoRepair: false
         replace:
@@ -167,80 +96,220 @@ spec:
         type: AWS
       release:
         image: quay.io/openshift-release-dev/ocp-release:4.11.8-x86_64
-      replicas: 2
+      replicas: 1
   infrastructure:
     cloudProvider:
-      name: aws-cred
+      name: aws-credentials <8>
     configure: True
     platform:
       aws:
-        region: us-west-2
+        region: us-west-2 <9>
+        zones: <10>
+        - us-west-2b
+        - us-west-2c
 ----
++
+[NOTE]
+====
+<1> Name of the cluster. Referenced a few more times in this resources
+<2> Default networking configuration
+<3> Networking Plugin to use: `OVNKubernetes` or `OpenShiftSDN`
+<4> Name of a secret to store a pull secret. Will be created automatically
+<5> OpenShift release image to use
+<6> An Array of (worker) node pools. In this example you are distributing your two workers nodes over two different availability zones, us-west-2b and us-west-2c. It is a good idea to use descriptive names for the worker node pools.
+<7> Instance type to use for worker nodes (control plane will run as pods on the host cluster)
+<8> AWS Credentials and other information that is necessary for deployment (base domain, SSH keys, OpenShift pull secret). The name of the secret - and the secret has to exist in the hub cluster's (`local-cluster` in our case) namespace.
+<9> The AWS Region to be deploy the cluster (worker nodes) into.
+<10> Optional: which zones to use for the deployment
+====
 
-* Deploy the cluster
+. If you copied the above YAML manifest make sure you didn't copy any of the annotations.
+. Create the *production* cluster:
 +
 [source,sh]
 ----
-oc apply -f development.yaml
+oc apply -f production.yaml
 ----
 
-* Wait until the cluster shows deployed:
+. Check that the cluster was created successfully:
 +
 [source,sh]
 ----
-watch -n 10 oc get hypershiftdeployment -n aws-hypershift
+oc get hd -n hypershift
 ----
 +
 .Sample Output
-[source]
+[source,texinfo,options=nowrap]
 ----
-NAME	  TYPE   INFRA                  IAM                    MANIFESTWORK           PROVIDER REF   PROGRESS    AVAILABLE
-development    AWS    ConfiguredAsExpected   ConfiguredAsExpected   ConfiguredAsExpected   AsExpected     Completed   True
-awsprod   AWS    ConfiguredAsExpected   ConfiguredAsExpected   ConfiguredAsExpected   AsExpected     Partial     True
+NAME          TYPE   INFRA                  IAM                    MANIFESTWORK           PROVIDER REF   PROGRESS    AVAILABLE
+development   AWS    ConfiguredAsExpected   ConfiguredAsExpected   ConfiguredAsExpected   AsExpected     Completed   True
+production    AWS    BeingConfigured                                                      AsExpected
 ----
 
-== Access cluster(s)
-
-The kubeadmin password and kubeconfig file are stored in secrets in the local-cluster namespace.
-
-* `<clustername>-kubeadmin-password`
-* `<clustername>-admin-kubeconfig`
-
-Get the kubeadmin password:
-
+. Repeat the command until you see the following output:
++
 [source,sh]
 ----
-oc get secret development-kubeadmin-password -n local-cluster --template='{{ .data.password }}' | base64 -d ; echo
+oc get hd -n hypershift
 ----
++
+.Sample Output
+[source,texinfo,options=nowrap]
+----
+NAME          TYPE   INFRA                  IAM                    MANIFESTWORK           PROVIDER REF   PROGRESS    AVAILABLE
+development   AWS    ConfiguredAsExpected   ConfiguredAsExpected   ConfiguredAsExpected   AsExpected     Completed   True
+production    AWS    ConfiguredAsExpected   ConfiguredAsExpected   ConfiguredAsExpected   AsExpected     Partial     False
+----
++
+That means that your control plane has been configured and the cluster is now deploying the node pools.
 
-Get the kubeconfig file and save it as `$HOME/kubeconfig-<clustername>.yaml`
+. Retrieve the kubeadmin password to access your new cluster and save it to a file in the `$HOME/.kube` directory:
++
 [source,sh]
 ----
-oc get secret development-admin-kubeconfig -n local-cluster --template='{{ .data.kubeconfig }}' | base64 -d >$HOME/kubeconfig-development.yaml
+oc get secret production-kubeadmin-password -n local-cluster --template='{{ .data.password }}' | base64 -d >$HOME/.kube/production.kubeadmin-password
 ----
 
-Set the KUBECONFIG variable to point to the new kube config file
+. Retrieve the kukbeconfig file to access your new cluster and save it to a file in the `$HOME/.kube` directory:
++
 [source,sh]
 ----
-export KUBECONFIG=$HOME/kubeconfig-development.yaml
+oc get secret production-admin-kubeconfig -n local-cluster --template='{{ .data.kubeconfig }}' | base64 -d >$HOME/.kube/production-kubeconfig
 ----
 
-Validate the configuration
+. Set your `KUBECONFIG` variable to use the production cluster configuration:
++
+[source,sh]
+----
+export KUBECONFIG=$HOME/.kube/production-kubeconfig
+----
+
+. Check the configuration of the cluster operators:
++
 [source,sh]
 ----
 oc get co
 ----
++
+.Sample Output
+[source,texinfo,options=nowrap]
+----
+NAME                                       VERSION   AVAILABLE   PROGRESSING   DEGRADED   SINCE   MESSAGE
+console
+csi-snapshot-controller
+dns
+image-registry
+ingress                                              False       True          True       83s     The "default" ingress controller reports Available=False: IngressControllerUnavailable: One or more status conditions indicate unavailable: DeploymentAvailable=False (DeploymentUnavailable: The deployment has Available status condition set to False (reason: MinimumReplicasUnavailable) with message: Deployment does not have minimum availability.)
+insights
+kube-apiserver                             4.11.8    True        False         False      2m16s
+kube-controller-manager                    4.11.8    True        False         False      2m16s
+kube-scheduler                             4.11.8    True        False         False      2m16s
+kube-storage-version-migrator
+monitoring
+network                                    4.11.8    True        True          False      104s    DaemonSet "/openshift-multus/multus" is not yet scheduled on any nodes...
+openshift-apiserver                        4.11.8    True        False         False      2m16s
+openshift-controller-manager               4.11.8    True        False         False      2m16s
+openshift-samples
+operator-lifecycle-manager                 4.11.8    True        False         False      2m3s
+operator-lifecycle-manager-catalog         4.11.8    True        True          False      2m3s    Deployed 0.19.0
+operator-lifecycle-manager-packageserver   4.11.8    True        False         False      2m16s
+service-ca
+storage
+----
++
+Depending on how long you waited since you deployed the cluster you may see that some cluster operators are not yet available.
 
-Get the console URL
+. Check your node pools:
++
+[source,sh]
+----
+oc get nodes
+----
++
+.Sample Output (No nodes available yet)
+[source,texinfo]
+----
+No resources found
+----
++
+.Sample Output (Nodes available but not ready yet)
+[source,texinfo,options=nowrap]
+----
+NAME                                         STATUS     ROLES    AGE   VERSION
+ip-10-0-137-169.us-west-2.compute.internal   NotReady   worker   11s   v1.24.0+dc5a2fd
+ip-10-0-154-205.us-west-2.compute.internal   NotReady   worker   12s   v1.24.0+dc5a2fd
+----
++
+.Sample Output (Nodes available))
+[source,texinfo,options=nowrap]
+----
+NAME                                         STATUS   ROLES    AGE   VERSION
+ip-10-0-137-169.us-west-2.compute.internal   Ready    worker   75s   v1.24.0+dc5a2fd
+ip-10-0-154-205.us-west-2.compute.internal   Ready    worker   76s   v1.24.0+dc5a2fd
+----
++
+Again depending on how long it has been since you created the cluster you may see no nodes, NotReady nodes or you may already see the completely deployed nodes.
+
+. Once the nodes are ready go back and check the Cluster Operators. Repeat this command until the output looks like the one below - this can take a few minutes.
++
+[source,sh]
+----
+oc get co
+----
++
+.Sample Output
+[source,texinfo,options=nowrap]
+----
+NAME                                       VERSION   AVAILABLE   PROGRESSING   DEGRADED   SINCE   MESSAGE
+console                                    4.11.8    True        False         False      2m21s
+csi-snapshot-controller                    4.11.8    True        False         False      3m33s
+dns                                        4.11.8    True        False         False      2m28s
+image-registry                             4.11.8    True        False         False      2m2s
+ingress                                    4.11.8    True        False         False      2m24s
+insights                                   4.11.8    True        False         False      4m13s
+kube-apiserver                             4.11.8    True        False         False      8m57s
+kube-controller-manager                    4.11.8    True        False         False      8m57s
+kube-scheduler                             4.11.8    True        False         False      8m57s
+kube-storage-version-migrator              4.11.8    True        False         False      3m41s
+monitoring                                 4.11.8    True        False         False      46s
+network                                    4.11.8    True        False         False      8m25s
+openshift-apiserver                        4.11.8    True        False         False      8m57s
+openshift-controller-manager               4.11.8    True        False         False      8m57s
+openshift-samples                          4.11.8    True        False         False      2m4s
+operator-lifecycle-manager                 4.11.8    True        False         False      8m44s
+operator-lifecycle-manager-catalog         4.11.8    True        False         False      8m44s
+operator-lifecycle-manager-packageserver   4.11.8    True        False         False      8m57s
+service-ca                                 4.11.8    True        False         False      4m13s
+storage                                    4.11.8    True        False         False      7s
+----
+
+. Retrieve the OpenShift console URL:
++
 [source,sh]
 ----
 oc whoami --show-console
 ----
++
+.Sample Output
+[source,texinfo]
+----
+https://console-openshift-console.apps.production.kvrsc.sandbox766.opentlc.com
+----
 
-Log into the console using `kubeadmin` and the previously retrieved kubeadmin password.
+. Open a web browser and use the previously retrieved kubeadmin password to log into the console as `kubeadmin`.
+. Explore the Console.
 
-Unset the KUBECONFIG variable to work back on your local cluster.
+. Once you are done exploring unset the `KUBECONFIG` variable to move back to your hub cluster.
++
 [source,sh]
 ----
 unset KUBECONFIG
 ----
+
+== Summary
+
+This concludes this lab. You have now used Hypershift to deploy a new OpenShift cluster - and you have now seen how quickly you can deploy a new cluster compared to running the OpenShift installer.
+
+= Next steps
+
+Follow https://github.com/redhat-cop/openshift-lab-origin/blob/master/HyperShift/Deploy_Application_.adoc[Deploy an application to HyperShift Clusters] to deploy a micro services application to both HyperShift clusters using Red Hat Advanced Cluster Management for Kubernetes.
