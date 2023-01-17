@@ -105,25 +105,37 @@ aws_secret_access_key = YOUR_AWS_SECRET_ACCESS_KEY
 +
 [source,sh]
 ----
-aws s3api create-bucket --bucket oidc-storage-${GUID} --region us-east-2 --create-bucket-configuration LocationConstraint=us-east-2
+aws s3api create-bucket \
+  --bucket oidc-storage-${GUID} \
+  --region us-east-2 \
+  --create-bucket-configuration LocationConstraint=us-east-2
 ----
 . Create a secret with AWS credential information in the `local-cluster` namespace:
 +
 [source,sh]
 ----
-oc create secret generic hypershift-operator-oidc-provider-s3-credentials -n local-cluster --from-file=credentials=$HOME/.aws/credentials --from-literal=bucket=oidc-storage-${GUID} --from-literal=region=us-east-2
+oc create secret generic hypershift-operator-oidc-provider-s3-credentials \
+  -n local-cluster \
+  --from-file=credentials=$HOME/.aws/credentials \
+  --from-literal=bucket=oidc-storage-${GUID} \
+  --from-literal=region=us-east-2
 
-oc label secret hypershift-operator-oidc-provider-s3-credentials -n local-cluster cluster.open-cluster-management.io/backup=true
+oc label secret hypershift-operator-oidc-provider-s3-credentials \
+  -n local-cluster \
+  cluster.open-cluster-management.io/backup=true
 ----
 
 . Enable the HyperShift Preview Tech Preview:
 +
 [source,sh]
 ----
-oc patch mce multiclusterengine -n multicluster-engine --type=merge -p '{"spec":{"overrides":{"components":[{"name":"hypershift-preview","enabled": true}]}}}'
+oc patch mce multiclusterengine \
+  -n multicluster-engine \
+  --type=merge \
+  --patch '{"spec":{"overrides":{"components":[{"name":"hypershift-preview","enabled": true}]}}}'
 ----
 
-. Wait for the Hypershift Addon to be installed:
+. Wait for the Hypershift addon to be installed:
 +
 [source,sh]
 ----
@@ -147,11 +159,11 @@ hypershift-addon   True        False
 
 Your Red Hat Advanced Cluster Management for Kubernetes is now configured for the Hypershift Tech Preview.
 
-== Deploy a Hosted Cluster using the hypershift CLI
+== Deploy a Hosted Cluster using the hypershift CLI (All in one)
 
 Using the `hypershift` CLI you can now deploy a hosted cluster.
 
-. Set some environment variables to deploy a cluster *development* in region us-west-2.
+. Setup environment variables to deploy a cluster *development-${GUID}* in region us-west-2.
 +
 [source,sh]
 ----
@@ -162,6 +174,7 @@ export BASE_DOMAIN=sandbox948.opentlc.com
 export PULL_SECRET=${HOME}/pullsecret.json
 export BUCKET_NAME=oidc-storage-${GUID}
 export BUCKET_REGION=us-east-2
+export AWS_CREDS_FILE=${HOME}/.aws/credentials
 ----
 
 . Create the hosted cluster:
@@ -172,7 +185,7 @@ hypershift create cluster aws \
     --name ${CLUSTER_NAME} \
     --infra-id ${INFRA_ID} \
     --pull-secret ${PULL_SECRET} \
-    --aws-creds ${HOME}/.aws/credentials \
+    --aws-creds ${AWS_CREDS_FILE} \
     --region ${REGION} \
     --zones ${REGION}a \ # Single zone setup, can add more zones \
     --instance-type m6a.2xlarge \ # Default is m5.large which is usually too small \
@@ -182,7 +195,7 @@ hypershift create cluster aws \
     --generate-ssh \
     --control-plane-availability-policy SingleReplica \ # HighlyAvailable
     --network-type OVNKubernetes \ # Calico, OVNKubernetes, OpenShiftSDN
-    --release-image quay.io/openshift-release-dev/ocp-release:4.12.0-rc.8-x86_64 \ # optional, if omitted same as hub cluster
+    --release-image quay.io/openshift-release-dev/ocp-release:4.12.0-x86_64 \ # optional, if omitted same as hub cluster
     --node-pool-replicas 2 \
     --namespace clusters
 
@@ -191,7 +204,7 @@ hypershift create cluster aws \
     --name ${CLUSTER_NAME} \
     --infra-id ${INFRA_ID} \
     --pull-secret ${PULL_SECRET} \
-    --aws-creds ${HOME}/.aws/credentials \
+    --aws-creds ${AWS_CREDS_FILE} \
     --region ${REGION} \
     --zones ${REGION}a \
     --instance-type m6a.2xlarge \
@@ -201,7 +214,7 @@ hypershift create cluster aws \
     --generate-ssh \
     --control-plane-availability-policy SingleReplica \
     --network-type OVNKubernetes \
-    --release-image quay.io/openshift-release-dev/ocp-release:4.12.0-rc.8-x86_64 \
+    --release-image quay.io/openshift-release-dev/ocp-release:4.12.0-x86_64 \
     --node-pool-replicas 2 \
     --namespace clusters
 
@@ -211,7 +224,7 @@ hypershift create cluster aws \
     --name ${CLUSTER_NAME} \
     --infra-id ${INFRA_ID} \
     --pull-secret ${PULL_SECRET} \
-    --aws-creds ${HOME}/.aws/credentials \
+    --aws-creds ${AWS_CREDS_FILE} \
     --region ${REGION} \
     --zones ${REGION}a \
     --instance-type m6a.2xlarge \
@@ -221,11 +234,10 @@ hypershift create cluster aws \
     --generate-ssh \
     --control-plane-availability-policy SingleReplica \
     --network-type OVNKubernetes \
-    --release-image quay.io/openshift-release-dev/ocp-release:4.12.0-rc.8-x86_64 \
+    --release-image quay.io/openshift-release-dev/ocp-release:4.12.0-x86_64 \
     --node-pool-replicas 2 \
     --namespace clusters
 ----
-
 
 . Wait until hosted cluster is available
 +
@@ -255,7 +267,7 @@ NAMESPACE                         NAME                                      CLUS
 local-cluster-development-wk412   development-wk412-us-west-2a-5454cdd59b   development-wk412   2                              3m54s   4.12.0-rc.8
 ----
 
-. Can also check Machines:
+. You can also check the Machines:
 +
 [source,sh]
 ----
@@ -270,14 +282,262 @@ local-cluster-development-wk412   development-wk412-us-west-2a-5454cdd59b-6xz9t 
 local-cluster-development-wk412   development-wk412-us-west-2a-5454cdd59b-zdpk4   development-wk412                           Provisioning   4m43s   4.12.0-rc.8
 ----
 
-=== Import the cluster into RHACM
+== Deploy a Hosted Cluster using the hypershift CLI (individual steps)
 
-. Annotate the Hosted Cluster
+Using the `hypershift` CLI you can now deploy a hosted cluster.
+
+. Set some environment variables to deploy a cluster *development* in region us-west-2.
 +
 [source,sh]
 ----
-oc annotate hostedcluster development-${GUID} -n development-${GUID} cluster.open-cluster-management.io/hypershiftdeployment=local-cluster/${CLUSTER_NAME}
-oc annotate hostedcluster development-${GUID} -n development-${GUID} cluster.open-cluster-management.io/managedcluster-name=${CLUSTER_NAME}
+export OCP_RELEASE_IMAGE=quay.io/openshift-release-dev/ocp-release:4.12.0-x86_64
+export REGION=us-west-2
+export CLUSTER_NAME=development-${GUID}
+export INFRA_ID=development-${GUID}
+export BASE_DOMAIN=sandbox948.opentlc.com
+export PULL_SECRET=${HOME}/pullsecret.json
+export BUCKET_NAME=oidc-storage-${GUID}
+export BUCKET_REGION=us-east-2
+export AWS_CREDS_FILE=${HOME}/.aws/credentials
+export AWS_OUTPUT_FILE=${HOME}/aws-output.json
+export AWS_IAM_OUTPUT_FILE=${HOME}/aws-iam-output.json
+----
+
+. Create the AWS infrastructure resources for the cluster:
++
+[source,sh]
+----
+hypershift create infra aws \
+  --aws-creds ${AWS_CREDS_FILE} \
+  --base-domain ${BASE_DOMAIN} \
+  --infra-id ${INFRA_ID} \
+  --name ${CLUSTER_NAME} \
+  --region ${REGION} \
+  --output-file ${AWS_OUTPUT_FILE}
+----
+
+. Retrieve information from AWS outputfile and save as variables:
++
+[source,sh]
+----
+export AWS_MACHINE_CIDR=$(cat ${AWS_OUTPUT_FILE} | jq '.machineCIDR' | tr -d '"')
+export AWS_VPC_ID=$(cat ${AWS_OUTPUT_FILE} | jq '.vpcID' | tr -d '"')
+export AWS_ZONE_NAME=$(cat ${AWS_OUTPUT_FILE} | jq '.zones[0] .name' | tr -d '"')
+export AWS_ZONE_SUBNET_ID=$(cat ${AWS_OUTPUT_FILE} | jq '.zones[0] .subnetID' | tr -d '"')
+export AWS_SECURITY_GROUP_ID=$(cat ${AWS_OUTPUT_FILE} | jq '.securityGroupID' | tr -d '"')
+export AWS_PUBLIC_ZONE_ID=$(cat ${AWS_OUTPUT_FILE} | jq '.publicZoneID' | tr -d '"')
+export AWS_PRIVATE_ZONE_ID=$(cat ${AWS_OUTPUT_FILE} | jq '.privateZoneID' | tr -d '"')
+export AWS_LOCAL_ZONE_ID=$(cat ${AWS_OUTPUT_FILE} | jq '.localZoneID' | tr -d '"')
+----
+
+. Create AWS IAM resources:
++
+[source,sh]
+----
+hypershift create iam aws \
+  --aws-creds ${AWS_CREDS_FILE} \
+  --infra-id ${INFRA_ID} \
+  --local-zone-id ${AWS_LOCAL_ZONE_ID} \
+  --private-zone-id ${AWS_PRIVATE_ZONE_ID} \
+  --public-zone-id ${AWS_PUBLIC_ZONE_ID} \
+  --oidc-storage-provider-s3-bucket-name ${BUCKET_NAME} \
+  --oidc-storage-provider-s3-region ${BUCKET_REGION} \
+  --output-file ${AWS_IAM_OUTPUT_FILE}
+----
+
+. Retrieve information from AWS IAM outputfile and save as variables:
++
+[source,sh]
+----
+export AWS_IAM_PROFILE_NAME=$(cat ${AWS_IAM_OUTPUT_FILE} | jq '.profileName' | tr -d '"')
+export AWS_IAM_ISSUER_URL=$(cat ${AWS_IAM_OUTPUT_FILE} | jq '.issuerURL' | tr -d '"')
+export AWS_IAM_ROLES_INGRESS_ARN=$(cat ${AWS_IAM_OUTPUT_FILE} | jq '.roles .ingressARN' | tr -d '"')
+export AWS_IAM_ROLES_IMG_REGISTRY_ARN=$(cat ${AWS_IAM_OUTPUT_FILE} | jq '.roles .imageRegistryARN' | tr -d '"')
+export AWS_IAM_ROLES_STORAGE_ARN=$(cat ${AWS_IAM_OUTPUT_FILE} | jq '.roles .storageARN' | tr -d '"')
+export AWS_IAM_ROLES_NETWORK_ARN=$(cat ${AWS_IAM_OUTPUT_FILE} | jq '.roles .networkARN' | tr -d '"')
+export AWS_IAM_ROLES_KUBE_CLOUD_CONTROLLER_ARN=$(cat ${AWS_IAM_OUTPUT_FILE} | jq '.roles .kubeCloudControllerARN' | tr -d '"')
+export AWS_IAM_ROLES_NODEPOOL_MGMT_ARN=$(cat ${AWS_IAM_OUTPUT_FILE} | jq '.roles .nodePoolManagementARN' | tr -d '"')
+export AWS_IAM_ROLES_CPO_ARN=$(cat ${AWS_IAM_OUTPUT_FILE} | jq '.roles .controlPlaneOperatorARN' | tr -d '"')
+----
+
+. Either create the hosted cluster via CLI:
++
+[source,sh]
+----
+hypershift create cluster aws \
+  --name ${CLUSTER_NAME} \
+  --infra-id ${INFRA_ID} \
+  --infra-json ${AWS_OUTPUT_FILE} \
+  --iam-json ${AWS_IAM_OUTPUT_FILE} \
+  --aws-creds ${AWS_CREDS_FILE} \
+  --pull-secret ${PULL_SECRET} \
+  --region ${REGION} \
+  --generate-ssh \
+  --node-pool-replicas 3 \
+  --namespace local-cluster
+
+oc annotate hostedcluster development-${GUID} \
+  -n local-cluster \
+  cluster.open-cluster-management.io/hypershiftdeployment=local-cluster/${CLUSTER_NAME}
+
+oc annotate hostedcluster development-${GUID} \
+  -n local-cluster \
+  cluster.open-cluster-management.io/managedcluster-name=${CLUSTER_NAME}
+----
+
+. Or create the hosted cluster via YAML:
++
+[source,sh]
+----
+oc create secret generic -n local-cluster \
+   ${CLUSTER_NAME}-pull-secret \
+   --from-file=.dockerconfigjson=${PULL_SECRET}
+
+oc create secret generic -n local-cluster \
+  ${CLUSTER_NAME}-ssh-key \
+  --from-file=id_rsa=${HOME}/.ssh/id_rsa \
+  --from-file=id_rsa.pub=${HOME}/.ssh/id_rsa.pub
+
+cat <<EOF >${HOME}/${CLUSTER_NAME}.yaml
+---
+apiVersion: hypershift.openshift.io/v1beta1
+kind: HostedCluster
+metadata:
+  name: ${CLUSTER_NAME}
+  namespace: local-cluster
+  annotations:
+    cluster.open-cluster-management.io/hypershiftdeployment: local-cluster/${CLUSTER_NAME}
+    cluster.open-cluster-management.io/managedcluster-name: ${CLUSTER_NAME}
+spec:
+  autoscaling: {}
+  controllerAvailabilityPolicy: SingleReplica
+  dns:
+    baseDomain: ${BASE_DOMAIN}
+    privateZoneID: ${AWS_PRIVATE_ZONE_ID}
+    publicZoneID: ${AWS_PUBLIC_ZONE_ID}
+  etcd:
+    managed:
+      storage:
+        persistentVolume:
+          size: 4Gi
+          storageClassName: gp3-csi
+        type: PersistentVolume
+    managementType: Managed
+  fips: false
+  infraID: ${INFRA_ID}
+  infrastructureAvailabilityPolicy: SingleReplica
+  issuerURL: https://${BUCKET_NAME}.s3.${BUCKET_REGION}.amazonaws.com/${CLUSTER_NAME}
+  networking:
+    clusterNetwork:
+    - cidr: 10.132.0.0/14
+    machineNetwork:
+    - cidr: ${AWS_MACHINE_CIDR}
+    networkType: OVNKubernetes
+    serviceNetwork:
+    - cidr: 172.31.0.0/16
+  olmCatalogPlacement: management
+  platform:
+    aws:
+      cloudProviderConfig:
+        subnet:
+          id: ${AWS_ZONE_SUBNET_ID}
+        vpc: ${AWS_VPC_ID}
+        zone: ${AWS_ZONE_NAME}
+      endpointAccess: Public
+      region: ${REGION}
+      resourceTags:
+      - key: kubernetes.io/cluster/${CLUSTER_NAME}
+        value: owned
+      rolesRef:
+        controlPlaneOperatorARN: ${AWS_IAM_ROLES_CPO_ARN}
+        imageRegistryARN: ${AWS_IAM_ROLES_IMG_REGISTRY_ARN}
+        ingressARN: ${AWS_IAM_ROLES_INGRESS_ARN}
+        kubeCloudControllerARN: ${AWS_IAM_ROLES_KUBE_CLOUD_CONTROLLER_ARN}
+        networkARN: ${AWS_IAM_ROLES_NETWORK_ARN}
+        nodePoolManagementARN: ${AWS_IAM_ROLES_NODEPOOL_MGMT_ARN}
+        storageARN: ${AWS_IAM_ROLES_STORAGE_ARN}
+    type: AWS
+  pullSecret:
+    name: ${CLUSTER_NAME}-pull-secret
+  release:
+    image: ${OCP_RELEASE_IMAGE}
+  secretEncryption:
+    aescbc:
+      activeKey:
+        name:  ${CLUSTER_NAME}-etcd-encryption-key
+    type: aescbc
+  services:
+  - service: APIServer
+    servicePublishingStrategy:
+      type: LoadBalancer
+  - service: OAuthServer
+    servicePublishingStrategy:
+      type: Route
+  - service: Konnectivity
+    servicePublishingStrategy:
+      type: Route
+  - service: Ignition
+    servicePublishingStrategy:
+      type: Route
+  - service: OVNSbDb
+    servicePublishingStrategy:
+      type: Route
+  sshKey:
+    name: ${CLUSTER_NAME}-ssh-key
+EOF
+----
+
+. Create the cluster:
++
+[source,sh]
+----
+oc apply -f ${HOME}/${CLUSTER_NAME}.yaml
+----
+
+. Create a *NodePool* manifest:
++
+[source,sh]
+----
+cat <<EOF >${HOME}/${CLUSTER_NAME}-node-pool.yaml
+---
+apiVersion: hypershift.openshift.io/v1beta1
+kind: NodePool
+metadata:
+  name: ${CLUSTER_NAME}-workers
+  namespace: local-cluster
+spec:
+  clusterName: ${CLUSTER_NAME}
+  management:
+    autoRepair: true
+    replace:
+      rollingUpdate:
+        maxSurge: 1
+        maxUnavailable: 0
+      strategy: RollingUpdate
+    upgradeType: Replace
+  platform:
+    aws:
+      instanceProfile: ${INFRA_ID}-worker
+      instanceType: m6a.2xlarge
+      rootVolume:
+        size: 120
+        type: gp3
+      securityGroups:
+      - id: ${AWS_SECURITY_GROUP_ID}
+      subnet:
+        id: ${AWS_ZONE_SUBNET_ID}
+    type: AWS
+  release:
+    image: ${OCP_RELEASE_IMAGE}
+  replicas: 2
+EOF
+----
+
+. Create the NodePool:
++
+[source,sh]
+----
+oc apply -f ${HOME}/${CLUSTER_NAME}-node-pool.yaml
 ----
 
 . Create *Managed Cluster* resource:
@@ -297,6 +557,7 @@ metadata:
     cluster.open-cluster-management.io/clusterset: default
     name: ${CLUSTER_NAME}
     vendor: OpenShift
+    type: sandbox-development
   name: ${CLUSTER_NAME}
 spec:
   hubAcceptsClient: true
@@ -304,128 +565,70 @@ spec:
 EOF
 ----
 
+=== Import the cluster into RHACM
 
-== Deploy a cluster using Hypershift using YAML
-
-Now that Hypershift Tech Preview has been enabled in RHACM you can use it to deploy a new cluster.
-
-. Create namespace to collect all Hypershift resources:
+. Create *Managed Cluster* resource:
 +
 [source,sh]
 ----
-oc create namespace hypershift
-----
-
-. Hypershift needs some information available in a secret. This information includes:
-
-* Top level Domain for provisioned clusters
-* AWS Access Key ID
-* AWS Secret ACCESS Key
-* Your Pull Secret to allow the pull of OpenShift Container Platform images
-* A private and public key
-+
-Create the AWS Credentials Secret for Hypershift:
-+
-[source,sh]
-----
-oc create secret generic aws-credentials -n hyperhift \
-   --from-literal=baseDomain='sandboxXXXX.opentlc.com' \
-   --from-literal=aws_access_key_id='YOUR_ACCESS_KEY_ID' \
-   --from-literal=aws_secret_access_key='YOUR_SECRET_ACCESS_KEY' \
-   --from-file=pullSecret=~/.pullsecret.json \
-   --from-file=ssh-publickey=~/.ssh/wkacmkey.pub \
-   --from-file=ssh-privatekey=~/.ssh/wkacmkey.pem
-
-oc label secret aws-credentials -n hypershift cluster.open-cluster-management.io/backup=""
-----
-
-. Create a YAML file `development.yaml` with cluster properties:
-+
-[source,yaml]
-----
----
-apiVersion: cluster.open-cluster-management.io/v1alpha1
-kind: HypershiftDeployment
+cat <<EOF | oc apply -f -
+apiVersion: cluster.open-cluster-management.io/v1
+kind: ManagedCluster
 metadata:
-  name: development
-  namespace: hypershift
+  annotations:
+    import.open-cluster-management.io/hosting-cluster-name: local-cluster
+    import.open-cluster-management.io/klusterlet-deploy-mode: Hosted
+    open-cluster-management/created-via: other
+  labels:
+    cloud: auto-detect
+    cluster.open-cluster-management.io/clusterset: default
+    name: ${CLUSTER_NAME}
+    vendor: OpenShift
+    type: sandbox-development
+  name: ${CLUSTER_NAME}
 spec:
-  hostingCluster: local-cluster
-  hostingNamespace: clusters
-  hostedClusterSpec:
-    networking:
-      machineCIDR: 10.0.0.0/16    # Default
-      networkType: OpenShiftSDN
-      podCIDR: 10.132.0.0/14      # Default
-      serviceCIDR: 172.31.0.0/16  # Default
-    platform:
-      type: AWS
-    pullSecret:
-      name: development-pull-secret    # This secret is created by the controller
-    release:
-      image: quay.io/openshift-release-dev/ocp-release:4.11.8-x86_64
-    services:
-    - service: APIServer
-      servicePublishingStrategy:
-        type: LoadBalancer
-    - service: OAuthServer
-      servicePublishingStrategy:
-        type: Route
-    - service: Konnectivity
-      servicePublishingStrategy:
-        type: Route
-    - service: Ignition
-      servicePublishingStrategy:
-        type: Route
-    sshKey: {}
-  nodePools:
-  - name: development
-    spec:
-      clusterName: development
-      management:
-        autoRepair: false
-        replace:
-          rollingUpdate:
-            maxSurge: 1
-            maxUnavailable: 0
-          strategy: RollingUpdate
-        upgradeType: Replace
-      platform:
-        aws:
-          instanceType: m5.large
-        type: AWS
-      release:
-        image: quay.io/openshift-release-dev/ocp-release:4.11.8-x86_64
-      replicas: 2
-  infrastructure:
-    cloudProvider:
-      name: aws-credentials # The secret you previously created
-    configure: True
-    platform:
-      aws:
-        region: us-west-2
+  hubAcceptsClient: true
+  leaseDurationSeconds: 60
+EOF
 ----
 
-. Deploy the cluster:
+That's it. Your hosted cluster is now deployed.
+
+=== Destroy Hosted Clusters manually in case of failure
+
+. Destroy hosted cluster via CLI:
 +
 [source,sh]
 ----
-oc apply -f development.yaml
+hypershift destroy cluster aws \
+  --name ${CLUSTER_NAME} \
+  --infra-id ${INFRA_ID} \
+  --aws-creds ${AWS_CREDS_FILE} \
+  --namespace local-cluster
 ----
 
-* Wait until the cluster shows deployed:
+. Destroy AWS IAM resources:
 +
 [source,sh]
 ----
-watch -n 10 oc get hypershiftdeployment -n hypershift
+hypershift destroy iam aws --aws-creds ${AWS_CREDS_FILE} --infra-id ${INFRA_ID}
 ----
+
+. Destroy AWS infrastructure resources:
 +
-.Sample Output
-[source,texinfo,options=nowrap]
+[source,sh]
 ----
-NAME	  TYPE   INFRA                  IAM                    MANIFESTWORK           PROVIDER REF   PROGRESS    AVAILABLE
-development    AWS    ConfiguredAsExpected   ConfiguredAsExpected   ConfiguredAsExpected   AsExpected     Completed   True
+hypershift destroy infra aws --aws-creds ${AWS_CREDS_FILE} --base-domain ${BASE_DOMAIN} --infra-id ${INFRA_ID}
 ----
+
+
+
+
+
+
+
+
+
 
 == Access cluster(s)
 
@@ -438,21 +641,21 @@ The kubeadmin password and kubeconfig file are stored in secrets in the `local-c
 +
 [source,sh]
 ----
-oc get secret development-kubeadmin-password -n local-cluster --template='{{ .data.password }}' | base64 -d ; echo
+oc get secret ${CLUSTER_NAME}-kubeadmin-password -n local-cluster --template='{{ .data.password }}' | base64 -d ; echo
 ----
 
 . Get the kubeconfig file and save it as `$HOME/kubeconfig-<clustername>.yaml`
 +
 [source,sh]
 ----
-oc get secret development-admin-kubeconfig -n local-cluster --template='{{ .data.kubeconfig }}' | base64 -d >$HOME/kubeconfig-development.yaml
+oc get secret ${CLUSTER_NAME}-admin-kubeconfig -n local-cluster --template='{{ .data.kubeconfig }}' | base64 -d >$HOME/kubeconfig-${CLUSTER_NAME}.yaml
 ----
 
 . Set the KUBECONFIG variable to point to the new kube config file
 +
 [source,sh]
 ----
-export KUBECONFIG=$HOME/kubeconfig-development.yaml
+export KUBECONFIG=$HOME/kubeconfig-${CLUSTER_NAME}.yaml
 ----
 
 . Validate the configuration
