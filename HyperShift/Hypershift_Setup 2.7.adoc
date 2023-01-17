@@ -1,0 +1,479 @@
+= HyperShift Setup for ACM 2.7
+
+== Overview
+
+This document describes how to install and configure Hypershift from scratch. It also explains how to deploy a managed cluster using Hypershift.
+
+This document is not part of the lab (the environment has been pre-provisioned) but rather is provided as background information to explain what has been set up.
+
+== Docs
+
+* RHACM 2.5: https://access.redhat.com/documentation/en-us/red_hat_advanced_cluster_management_for_kubernetes/2.5/html/clusters/managing-your-clusters#hosted-control-plane-intro
+* RHACM 2.6: https://access.redhat.com/documentation/en-us/red_hat_advanced_cluster_management_for_kubernetes/2.6/html/multicluster_engine/multicluster_engine_overview#hosted-control-planes-intro
+* RHACM 2.7: https://access.redhat.com/documentation/en-us/red_hat_advanced_cluster_management_for_kubernetes/2.7/html/multicluster_engine/multicluster_engine_overview#hosted-control-planes-intro
+
+
+== Prerequisites
+
+. Deploy an OpenShift 4.12 (RC) cluster
+. On that cluster install Advanced Cluster Manager 2.7 (operator and operand)
+* For beta/upstream code deploy as outlined in https://github.com/stolostron/deploy
+. Get your AWS credentials ready
+* AWS Access Key
+* AWS Secret Access Key
+* Top level domain (sandboxXXXX.opentlc.com)
+. Retrieve your privae and public key (e.g. ~/.ssh/${GUID}key.pem and ~/.ssh/${GUID}key.pub)
+. Make sure you have your OpenShift Pull Secret in a file `$HOME/pullsecret.json`
+
+=== Set up the Hypershift CLI
+
+. Install make
++
+[source,sh]
+----
+sudo dnf -y install make
+----
+
+. Download and install the `yq` binary
++
+[source,sh]
+----
+sudo wget https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 -O /usr/bin/yq
+sudo chmod +x /usr/bin/yq
+----
+
+. Install go
++
+[source,sh]
+----
+wget https://go.dev/dl/go1.18.10.linux-amd64.tar.gz
+sudo tar -C /usr/local -xzf go1.18.10.linux-amd64.tar.gz
+rm go1.18.10.linux-amd64.tar.gz
+echo "export PATH=$PATH:/usr/local/go/bin" >>~/.bashrc
+source ~/.bashrc
+----
+
+. Download, build and install the Hypershift CLI
++
+[source,sh]
+----
+git clone https://github.com/openshift/hypershift.git
+cd hypershift
+make hypershift
+sudo install -m 0755 bin/hypershift /usr/bin/hypershift
+----
+
+=== Deploy Open Cluster Management
+
+. Clone the repo
++
+[source,sh]
+----
+git clone https://github.com/stolostron/deploy.git
+----
+
+. Generate your `~/deploy/prereqs/pull-secret.yaml` as per https://github.com/stolostron/deploy#prepare-to-deploy-open-cluster-management-instance-only-do-once
+
+. Install Open Cluster Management
++
+[source,sh]
+----
+cd ~/deploy
+./start.sh --watch --search
+----
+
+. Use a recent 2.7 Snapshot from https://quay.io/repository/stolostron/acm-custom-registry?tab=tags (e.g. `2.7.0-SNAPSHOT-2023-01-10-16-43-48`) when prompted.
+
+. Wait for the install to finish.
+
+=== Set up AWS
+
+. Set up AWS Credentials in file `~/.aws/credentials`
++
+[source,texinfo]
+----
+[default]
+aws_access_key_id = YOUR_AWS_ACCESS_KEY_ID
+aws_secret_access_key = YOUR_AWS_SECRET_ACCESS_KEY
+----
+
+=== Setup Hypershift
+
+. Hypershift needs an AWS S3 Bucket to store OICD documents (although Minio or OpenShift Data Foundations should work as well).
++
+. Create an AWS S3 Bucket:
++
+[source,sh]
+----
+aws s3api create-bucket --bucket oidc-storage-${GUID} --region us-east-2 --create-bucket-configuration LocationConstraint=us-east-2
+----
+. Create a secret with AWS credential information in the `local-cluster` namespace:
++
+[source,sh]
+----
+oc create secret generic hypershift-operator-oidc-provider-s3-credentials -n local-cluster --from-file=credentials=$HOME/.aws/credentials --from-literal=bucket=oidc-storage-${GUID} --from-literal=region=us-east-2
+
+oc label secret hypershift-operator-oidc-provider-s3-credentials -n local-cluster cluster.open-cluster-management.io/backup=true
+----
+
+. Enable the HyperShift Preview Tech Preview:
++
+[source,sh]
+----
+oc patch mce multiclusterengine -n multicluster-engine --type=merge -p '{"spec":{"overrides":{"components":[{"name":"hypershift-preview","enabled": true}]}}}'
+----
+
+. Wait for the Hypershift Addon to be installed:
++
+[source,sh]
+----
+oc wait --for=condition=Degraded=True managedclusteraddons/hypershift-addon -n local-cluster --timeout=5m
+oc wait --for=condition=Available=True managedclusteraddons/hypershift-addon -n local-cluster --timeout=5m
+----
+
+. Validate that the addon is available:
++
+[source,sh]
+----
+oc get managedclusteraddon hypershift-addon -n local-cluster
+----
++
+.Sample Output
+[source,texinfo]
+----
+NAME               AVAILABLE   DEGRADED   PROGRESSING
+hypershift-addon   True        False
+----
+
+Your Red Hat Advanced Cluster Management for Kubernetes is now configured for the Hypershift Tech Preview.
+
+== Deploy a Hosted Cluster using the hypershift CLI
+
+Using the `hypershift` CLI you can now deploy a hosted cluster.
+
+. Set some environment variables to deploy a cluster *development* in region us-west-2.
++
+[source,sh]
+----
+export REGION=us-west-2
+export CLUSTER_NAME=development-${GUID}
+export INFRA_ID=development-${GUID}
+export BASE_DOMAIN=sandbox948.opentlc.com
+export PULL_SECRET=${HOME}/pullsecret.json
+export BUCKET_NAME=oidc-storage-${GUID}
+export BUCKET_REGION=us-east-2
+----
+
+. Create the hosted cluster:
++
+[source,sh]
+----
+hypershift create cluster aws \
+    --name ${CLUSTER_NAME} \
+    --infra-id ${INFRA_ID} \
+    --pull-secret ${PULL_SECRET} \
+    --aws-creds ${HOME}/.aws/credentials \
+    --region ${REGION} \
+    --zones ${REGION}a \ # Single zone setup, can add more zones \
+    --instance-type m6a.2xlarge \ # Default is m5.large which is usually too small \
+    --root-volume-type gp3 \
+    --root-volume-size 250 \
+    --base-domain ${BASE_DOMAIN} \
+    --generate-ssh \
+    --control-plane-availability-policy SingleReplica \ # HighlyAvailable
+    --network-type OVNKubernetes \ # Calico, OVNKubernetes, OpenShiftSDN
+    --release-image quay.io/openshift-release-dev/ocp-release:4.12.0-rc.8-x86_64 \ # optional, if omitted same as hub cluster
+    --node-pool-replicas 2 \
+    --namespace clusters
+
+
+hypershift create cluster aws \
+    --name ${CLUSTER_NAME} \
+    --infra-id ${INFRA_ID} \
+    --pull-secret ${PULL_SECRET} \
+    --aws-creds ${HOME}/.aws/credentials \
+    --region ${REGION} \
+    --zones ${REGION}a \
+    --instance-type m6a.2xlarge \
+    --root-volume-type gp3 \
+    --root-volume-size 250 \
+    --base-domain ${BASE_DOMAIN} \
+    --generate-ssh \
+    --control-plane-availability-policy SingleReplica \
+    --network-type OVNKubernetes \
+    --release-image quay.io/openshift-release-dev/ocp-release:4.12.0-rc.8-x86_64 \
+    --node-pool-replicas 2 \
+    --namespace clusters
+
+export CLUSTER_NAME=production-${GUID}
+export INFRA_ID=production-${GUID}
+hypershift create cluster aws \
+    --name ${CLUSTER_NAME} \
+    --infra-id ${INFRA_ID} \
+    --pull-secret ${PULL_SECRET} \
+    --aws-creds ${HOME}/.aws/credentials \
+    --region ${REGION} \
+    --zones ${REGION}a \
+    --instance-type m6a.2xlarge \
+    --root-volume-type gp3 \
+    --root-volume-size 250 \
+    --base-domain ${BASE_DOMAIN} \
+    --generate-ssh \
+    --control-plane-availability-policy SingleReplica \
+    --network-type OVNKubernetes \
+    --release-image quay.io/openshift-release-dev/ocp-release:4.12.0-rc.8-x86_64 \
+    --node-pool-replicas 2 \
+    --namespace clusters
+----
+
+
+. Wait until hosted cluster is available
++
+[source,sh]
+----
+oc get hostedclusters -n ${CLUSTER_NAME}
+----
++
+.Sample Output
+[source,texinfo,options=nowrap]
+----
+NAME                VERSION   KUBECONFIG                           PROGRESS   AVAILABLE   PROGRESSING   MESSAGE
+development-wk412             development-wk412-admin-kubeconfig   Partial    True        False         The hosted control plane is available
+----
+
+. Check MachineSets for hosted cluster (and wait until all replicas are ready and available):
++
+[source,sh]
+----
+oc get machineset.cluster -A
+----
++
+.Sample Output
+[source,texinfo]
+----
+NAMESPACE                         NAME                                      CLUSTER             REPLICAS   READY   AVAILABLE   AGE     VERSION
+local-cluster-development-wk412   development-wk412-us-west-2a-5454cdd59b   development-wk412   2                              3m54s   4.12.0-rc.8
+----
+
+. Can also check Machines:
++
+[source,sh]
+----
+oc get machine.cluster -A
+----
++
+.Sample Output
+[source,texinfo]
+----
+NAMESPACE                         NAME                                            CLUSTER             NODENAME   PROVIDERID   PHASE          AGE     VERSION
+local-cluster-development-wk412   development-wk412-us-west-2a-5454cdd59b-6xz9t   development-wk412                           Provisioning   4m43s   4.12.0-rc.8
+local-cluster-development-wk412   development-wk412-us-west-2a-5454cdd59b-zdpk4   development-wk412                           Provisioning   4m43s   4.12.0-rc.8
+----
+
+=== Import the cluster into RHACM
+
+. Annotate the Hosted Cluster
++
+[source,sh]
+----
+oc annotate hostedcluster development-${GUID} -n development-${GUID} cluster.open-cluster-management.io/hypershiftdeployment=local-cluster/${CLUSTER_NAME}
+oc annotate hostedcluster development-${GUID} -n development-${GUID} cluster.open-cluster-management.io/managedcluster-name=${CLUSTER_NAME}
+----
+
+. Create *Managed Cluster* resource:
++
+[source,sh]
+----
+cat <<EOF | oc apply -f -
+apiVersion: cluster.open-cluster-management.io/v1
+kind: ManagedCluster
+metadata:
+  annotations:
+    import.open-cluster-management.io/hosting-cluster-name: local-cluster
+    import.open-cluster-management.io/klusterlet-deploy-mode: Hosted
+    open-cluster-management/created-via: other
+  labels:
+    cloud: auto-detect
+    cluster.open-cluster-management.io/clusterset: default
+    name: ${CLUSTER_NAME}
+    vendor: OpenShift
+  name: ${CLUSTER_NAME}
+spec:
+  hubAcceptsClient: true
+  leaseDurationSeconds: 60
+EOF
+----
+
+
+== Deploy a cluster using Hypershift using YAML
+
+Now that Hypershift Tech Preview has been enabled in RHACM you can use it to deploy a new cluster.
+
+. Create namespace to collect all Hypershift resources:
++
+[source,sh]
+----
+oc create namespace hypershift
+----
+
+. Hypershift needs some information available in a secret. This information includes:
+
+* Top level Domain for provisioned clusters
+* AWS Access Key ID
+* AWS Secret ACCESS Key
+* Your Pull Secret to allow the pull of OpenShift Container Platform images
+* A private and public key
++
+Create the AWS Credentials Secret for Hypershift:
++
+[source,sh]
+----
+oc create secret generic aws-credentials -n hyperhift \
+   --from-literal=baseDomain='sandboxXXXX.opentlc.com' \
+   --from-literal=aws_access_key_id='YOUR_ACCESS_KEY_ID' \
+   --from-literal=aws_secret_access_key='YOUR_SECRET_ACCESS_KEY' \
+   --from-file=pullSecret=~/.pullsecret.json \
+   --from-file=ssh-publickey=~/.ssh/wkacmkey.pub \
+   --from-file=ssh-privatekey=~/.ssh/wkacmkey.pem
+
+oc label secret aws-credentials -n hypershift cluster.open-cluster-management.io/backup=""
+----
+
+. Create a YAML file `development.yaml` with cluster properties:
++
+[source,yaml]
+----
+---
+apiVersion: cluster.open-cluster-management.io/v1alpha1
+kind: HypershiftDeployment
+metadata:
+  name: development
+  namespace: hypershift
+spec:
+  hostingCluster: local-cluster
+  hostingNamespace: clusters
+  hostedClusterSpec:
+    networking:
+      machineCIDR: 10.0.0.0/16    # Default
+      networkType: OpenShiftSDN
+      podCIDR: 10.132.0.0/14      # Default
+      serviceCIDR: 172.31.0.0/16  # Default
+    platform:
+      type: AWS
+    pullSecret:
+      name: development-pull-secret    # This secret is created by the controller
+    release:
+      image: quay.io/openshift-release-dev/ocp-release:4.11.8-x86_64
+    services:
+    - service: APIServer
+      servicePublishingStrategy:
+        type: LoadBalancer
+    - service: OAuthServer
+      servicePublishingStrategy:
+        type: Route
+    - service: Konnectivity
+      servicePublishingStrategy:
+        type: Route
+    - service: Ignition
+      servicePublishingStrategy:
+        type: Route
+    sshKey: {}
+  nodePools:
+  - name: development
+    spec:
+      clusterName: development
+      management:
+        autoRepair: false
+        replace:
+          rollingUpdate:
+            maxSurge: 1
+            maxUnavailable: 0
+          strategy: RollingUpdate
+        upgradeType: Replace
+      platform:
+        aws:
+          instanceType: m5.large
+        type: AWS
+      release:
+        image: quay.io/openshift-release-dev/ocp-release:4.11.8-x86_64
+      replicas: 2
+  infrastructure:
+    cloudProvider:
+      name: aws-credentials # The secret you previously created
+    configure: True
+    platform:
+      aws:
+        region: us-west-2
+----
+
+. Deploy the cluster:
++
+[source,sh]
+----
+oc apply -f development.yaml
+----
+
+* Wait until the cluster shows deployed:
++
+[source,sh]
+----
+watch -n 10 oc get hypershiftdeployment -n hypershift
+----
++
+.Sample Output
+[source,texinfo,options=nowrap]
+----
+NAME	  TYPE   INFRA                  IAM                    MANIFESTWORK           PROVIDER REF   PROGRESS    AVAILABLE
+development    AWS    ConfiguredAsExpected   ConfiguredAsExpected   ConfiguredAsExpected   AsExpected     Completed   True
+----
+
+== Access cluster(s)
+
+The kubeadmin password and kubeconfig file are stored in secrets in the `local-cluster`namespace.
+
+* `<clustername>-kubeadmin-password`
+* `<clustername>-admin-kubeconfig`
+
+. Get the kubeadmin password:
++
+[source,sh]
+----
+oc get secret development-kubeadmin-password -n local-cluster --template='{{ .data.password }}' | base64 -d ; echo
+----
+
+. Get the kubeconfig file and save it as `$HOME/kubeconfig-<clustername>.yaml`
++
+[source,sh]
+----
+oc get secret development-admin-kubeconfig -n local-cluster --template='{{ .data.kubeconfig }}' | base64 -d >$HOME/kubeconfig-development.yaml
+----
+
+. Set the KUBECONFIG variable to point to the new kube config file
++
+[source,sh]
+----
+export KUBECONFIG=$HOME/kubeconfig-development.yaml
+----
+
+. Validate the configuration
++
+[source,sh]
+----
+oc get co
+----
+
+. Get the console URL
++
+[source,sh]
+----
+oc whoami --show-console
+----
+
+. Log into the console using `kubeadmin` and the previously retrieved kubeadmin password.
+
+. Unset the KUBECONFIG variable to work back on your local cluster.
++
+[source,sh]
+----
+unset KUBECONFIG
+----

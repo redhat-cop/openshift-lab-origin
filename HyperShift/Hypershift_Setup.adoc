@@ -35,7 +35,7 @@ aws_secret_access_key = YOUR_AWS_SECRET_ACCESS_KEY
 +
 [source,sh]
 ----
-oc patch multiclusterengine -n multicluster-engine --type=merge -p '{"spec":{"overrides":{"components":[{"name":"hypershift-preview","enabled": true}]}}}'
+oc patch mce multiclusterengine -n multicluster-engine --type=merge -p '{"spec":{"overrides":{"components":[{"name":"hypershift-preview","enabled": true}]}}}'
 ----
 
 . Deploy Hypershift. Create a file `managed_cluster.yaml`
