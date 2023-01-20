@@ -1,0 +1,315 @@
+
+= Instructions to deploy a Hosting (Hub) Cluster
+
+:numbered:
+:toc:
+
+These instructions are to deploy and configure a hub cluster for RHPD PoC use. This cluster ban be used as a target cluster for new catalog items in RHPD which deploy OpenShift clusters using Hosted Control Planes.
+
+== Deploy Hub Cluster
+
+Use an AWS account that is outside of a Sandbox - Hypershift will need EIPs, Load Balancers, NAT Gateways etc and would run into capacity restrictions really quickly in a Sandbox account.
+
+[NOTE]
+----
+The current PoC cluster is deployed in the `development` AWS account.
+----
+
+Use the following vars file to deploy a new OpenShift 4.12 cluster:
+
+.OpenShift 4.12 Cluster Vars
+[source,yaml]
+----
+# -------------------------------------------------------------------
+# Mandatory Variables
+# -------------------------------------------------------------------
+cloud_provider: ec2
+env_type: ocp4-cluster
+software_to_deploy: openshift4
+# -------------------------------------------------------------------
+# End Mandatory Variables
+# -------------------------------------------------------------------
+
+platform: labs
+purpose: development
+
+agnosticd_aws_capacity_reservation_enable: false
+aws_region: us-east-2
+# aws_zones:
+# - us-east-2a
+# - us-east-2b
+
+ssh_authorized_keys:
+- key: https://github.com/wkulhanek.keys
+
+master_instance_type: m6a.xlarge
+master_instance_count: 3
+master_storage_type: io1
+master_storage_size: 250
+worker_instance_type: m6a.2xlarge
+worker_instance_count: 2
+worker_storage_type: gp3
+worker_storage_size: 250
+bastion_instance_type: t3a.medium
+bastion_instance_image: RHEL84GOLD-latest
+
+install_ftl: false
+install_student_user: true
+student_name: lab-user
+
+ocp4_installer_root_url: http://mirror.openshift.com/pub/openshift-v4/clients
+ocp4_installer_use_dev_preview: true
+ocp4_installer_url: https://mirror.openshift.com/pub/openshift-v4/clients/ocp/candidate-4.12/openshift-install-linux.tar.gz
+ocp4_client_url: https://mirror.openshift.com/pub/openshift-v4/clients/ocp/candidate-4.12/openshift-client-linux.tar.gz
+
+ocp4_installer_version: "4.12"
+ocp4_network_type: OVNKubernetes
+
+repo_method: satellite
+update_packages: false
+run_smoke_tests: false
+
+cloud_tags:
+- owner: wkulhane@redhat.com
+- Purpose: development
+- env_type: "{{ env_type }}"
+- guid: "{{ guid }}"
+
+infra_workloads:
+- ocp4_workload_le_certificates
+- ocp4_workload_authentication
+#- ocp4_workload_rhacm
+
+# Do not run any student customization.
+# This will result in a default OpenShift 4 installation.
+student_workloads: []
+
+# -------------------------------------------------------------------
+# Workload variables
+# -------------------------------------------------------------------
+
+# -------------------------------------------------------------------
+# Workload: ocp4_workload_authentication
+# -------------------------------------------------------------------
+ocp4_workload_authentication_idm_type: htpasswd
+ocp4_workload_authentication_admin_user: admin
+ocp4_workload_authentication_htpasswd_admin_password: r3dh4t1!
+ocp4_workload_authentication_htpasswd_user_base: user
+ocp4_workload_authentication_htpasswd_user_password: openshift
+ocp4_workload_authentication_htpasswd_user_count: 5
+ocp4_workload_authentication_remove_kubeadmin: true
+
+# -------------------------------------------------------------------
+# Workload: ocp4_workload_rhacm
+# -------------------------------------------------------------------
+ocp4_workload_rhacm_acm_channel: release-2.7
+# ocp4_workload_rhacm_use_catalog_snapshot: true
+# ocp4_workload_rhacm_catalogsource_name: catalogsource-rhacm
+# ocp4_workload_rhacm_catalog_source_image: "quay.io/gpte-devops-automation/olm_snapshot_redhat_catalog"
+# ocp4_workload_rhacm_catalog_source_tag: "v4.12_2023_01_23"
+----
+
+[NOTE]
+====
+TBD: Once RHACM 2.7 is GA also add and configure the workload `ocp4_workload_rhacm` to install RHACM
+====
+
+== Deploy RHACM 2.7 Development Code
+
+This section will be replaced by installing RHACM 2.7 via the OperatorHub once RHACM is available.
+
+. Clone the repository:
++
+[source,sh]
+----
+git clone https://github.com/stolostron/deploy.git
+----
+
+. Generate your `~/deploy/prereqs/pull-secret.yaml` as per https://github.com/stolostron/deploy#prepare-to-deploy-open-cluster-management-instance-only-do-once
+
+. Install Open Cluster Management
++
+[source,sh]
+----
+cd ~/deploy
+./start.sh --watch --search
+----
+
+. Use a recent 2.7 Snapshot from https://quay.io/repository/stolostron/acm-custom-registry?tab=tags (e.g. `2.7.0-SNAPSHOT-2023-01-18-23-04-43`) when prompted.
+
+. Wait for the install to finish.
+
+=== Set up AWS
+
+. Set up AWS Credentials in file `~/.aws/credentials`
++
+[source,texinfo]
+----
+[default]
+aws_access_key_id = YOUR_AWS_ACCESS_KEY_ID
+aws_secret_access_key = YOUR_AWS_SECRET_ACCESS_KEY
+----
+
+=== Set up the Hypershift CLI
+
+. Install make
++
+[source,sh]
+----
+sudo dnf -y install make
+----
+
+. Download and install the `yq` binary
++
+[source,sh]
+----
+sudo wget https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 -O /usr/bin/yq
+sudo chmod +x /usr/bin/yq
+----
+
+. Install go
++
+[source,sh]
+----
+wget https://go.dev/dl/go1.18.10.linux-amd64.tar.gz
+sudo tar -C /usr/local -xzf go1.18.10.linux-amd64.tar.gz
+rm go1.18.10.linux-amd64.tar.gz
+echo "export PATH=$PATH:/usr/local/go/bin" >>~/.bashrc
+source ~/.bashrc
+----
+
+. Download, build and install the Hypershift CLI
++
+[source,sh]
+----
+git clone https://github.com/openshift/hypershift.git
+cd hypershift
+make hypershift
+sudo install -m 0755 bin/hypershift /usr/bin/hypershift
+cd $HOME
+----
+
+== Setup Hypershift
+
+. Hypershift needs an AWS S3 Bucket to store OICD documents (although Minio or OpenShift Data Foundations should work as well).
++
+. Create an AWS S3 Bucket:
++
+[source,sh]
+----
+aws s3api create-bucket \
+  --bucket oidc-storage-${GUID} \
+  --region us-east-2 \
+  --create-bucket-configuration LocationConstraint=us-east-2
+----
+. Create a secret with AWS credential information in the `local-cluster` namespace:
++
+[source,sh]
+----
+oc create secret generic hypershift-operator-oidc-provider-s3-credentials \
+  -n local-cluster \
+  --from-file=credentials=$HOME/.aws/credentials \
+  --from-literal=bucket=oidc-storage-${GUID} \
+  --from-literal=region=us-east-2
+
+oc label secret hypershift-operator-oidc-provider-s3-credentials \
+  -n local-cluster \
+  cluster.open-cluster-management.io/backup=true
+----
+
+. Enable the HyperShift Preview Tech Preview:
++
+[source,sh]
+----
+oc patch mce multiclusterengine \
+  -n multicluster-engine \
+  --type=merge \
+  --patch '{"spec":{"overrides":{"components":[{"name":"hypershift-preview","enabled": true}]}}}'
+----
+
+. Wait for the Hypershift addon to be installed:
++
+[source,sh]
+----
+oc wait --for=condition=Degraded=True managedclusteraddons/hypershift-addon -n local-cluster --timeout=5m
+oc wait --for=condition=Available=True managedclusteraddons/hypershift-addon -n local-cluster --timeout=5m
+----
+
+. Validate that the addon is available:
++
+[source,sh]
+----
+oc get managedclusteraddon hypershift-addon -n local-cluster
+----
++
+.Sample Output
+[source,texinfo]
+----
+NAME               AVAILABLE   DEGRADED   PROGRESSING
+hypershift-addon   True        False
+----
+
+Your Red Hat Advanced Cluster Management for Kubernetes is now configured for the Hypershift Tech Preview.
+
+== Set up `opentlc-mgr` user
+
+RHDP uses the `opentlc-mgr` user on the bastion VM to deploy things. Therefore this user needs to be created and configured on the bastion VM.
+
+. Switch to root:
++
+[source,sh]
+----
+sudo -i
+----
+
+. Add the `opentlc-mgr` user:
++
+[source,sh]
+----
+adduser opentlc-mgr
+----
+
+. Set up `.kube/config` to allow `opentlc-mgr` to work as `system:admin` on the cluster.
++
+[source,sh]
+----
+cp -R /home/ec2-user/.kube /home/opentlc-mgr
+chown -R opentlc-mgr:users /home/opentlc-mgr/.kube
+----
+
+. Set up SSH configuration for `opentlc-mgr`:
++
+[source,sh]
+----
+mkdir /home/opentlc-mgr/.ssh
+----
+
+. Add the `opentlc-mgr` *public SSH key* to be used from RHPD to the `authorized_keys` file.
++
+[source,sh]
+----
+cat <<EOF >/home/opentlc-mgr/.ssh/authorized_keys
+ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCvZvn+GL0wTOsAdh1ikIQoqj2Fw/RA6F14O347rgKdpkgOQpGQk1k2gM8wcla2Y1o0bPIzwlNy1oh5o9uNjZDMeDcEXWuXbu0cRBy4pVRhh8a8zAZfssnqoXHHLyPyHWpdTmgIhr0UIGYrzHrnySAnUcDp3gJuE46UEBtrlyv94cVvZf+EZUTaZ+2KjTRLoNryCn7vKoGHQBooYg1DeHLcLSRWEADUo+bP0y64+X/XTMZOAXbf8kTXocqAgfl/usbYdfLOgwU6zWuj8vxzAKuMEXS1AJSp5aeqRKlbbw40IkTmLoQIgJdb2Zt98BH/xHDe9xxhscUCfWeS37XLp75J
+EOF
+----
+
+. Change permissions for the directory and file:
++
+[source,sh]
+----
+chown -R opentlc-mgr:users /home/opentlc-mgr/.ssh
+chmod 0700 /home/opentlc-mgr/.ssh
+chmod 0644 /home/opentlc-mgr/.ssh/*
+----
+
+. Add AWS credentials to the `opentlc-mgr` home directory:
++
+[source,sh]
+----
+cp -R /home/ec2-user/.aws /home/opentlc-mgr
+chown -R opentlc-mgr:users /home/opentlc-mgr/.aws
+chmod 0700 /home/opentlc-mgr/.aws
+----
+
+== Deploy policies to be applied to hosted clusters
+[TBD}]

@@ -61,6 +61,7 @@ git clone https://github.com/openshift/hypershift.git
 cd hypershift
 make hypershift
 sudo install -m 0755 bin/hypershift /usr/bin/hypershift
+cd $HOME
 ----
 
 === Deploy Open Cluster Management
@@ -82,7 +83,7 @@ cd ~/deploy
 ./start.sh --watch --search
 ----
 
-. Use a recent 2.7 Snapshot from https://quay.io/repository/stolostron/acm-custom-registry?tab=tags (e.g. `2.7.0-SNAPSHOT-2023-01-10-16-43-48`) when prompted.
+. Use a recent 2.7 Snapshot from https://quay.io/repository/stolostron/acm-custom-registry?tab=tags (e.g. `2.7.0-SNAPSHOT-2023-01-18-23-04-43`) when prompted.
 
 . Wait for the install to finish.
 
@@ -192,7 +193,7 @@ hypershift create cluster aws \
     --infra-id ${OCP_INFRA_ID} \
     --pull-secret ${OCP_PULL_SECRET} \
     --aws-creds ${AWS_CREDS_FILE} \
-    --aws_region ${AWS_REGION} \
+    --region ${AWS_REGION} \
     # Single zone setup, can add more zones \
     --zones ${AWS_REGION}a \
      # Default is m5.large which is usually too small \
@@ -216,7 +217,7 @@ hypershift create cluster aws \
     --infra-id ${OCP_INFRA_ID} \
     --pull-secret ${OCP_PULL_SECRET} \
     --aws-creds ${AWS_CREDS_FILE} \
-    --aws_region ${AWS_REGION} \
+    --region ${AWS_REGION} \
     --zones ${AWS_REGION}a \
     --instance-type m6a.2xlarge \
     --root-volume-type gp3 \
@@ -237,7 +238,7 @@ hypershift create cluster aws \
     --infra-id ${OCP_INFRA_ID} \
     --pull-secret ${OCP_PULL_SECRET} \
     --aws-creds ${AWS_CREDS_FILE} \
-    --aws_region ${AWS_REGION} \
+    --region ${AWS_REGION} \
     --zones ${AWS_REGION}a \
     --instance-type m6a.2xlarge \
     --root-volume-type gp3 \
@@ -386,7 +387,7 @@ hypershift create cluster aws \
   --iam-json ${AWS_IAM_OUTPUT_FILE} \
   --aws-creds ${AWS_CREDS_FILE} \
   --pull-secret ${OCP_PULL_SECRET} \
-  --aws_region ${AWS_REGION} \
+  --region ${AWS_REGION} \
   --control-plane-availability-policy SingleReplica \
   --network-type OVNKubernetes \
   --generate-ssh \
@@ -616,7 +617,8 @@ oc apply -f ${HOME}/${OCP_CLUSTER_NAME}-node-pool.yaml
 +
 [source,sh]
 ----
-cat <<EOF | oc apply -f -
+cat <<EOF >${HOME}/${OCP_CLUSTER_NAME}-managed-cluster.yaml
+---
 apiVersion: cluster.open-cluster-management.io/v1
 kind: ManagedCluster
 metadata:
@@ -638,7 +640,51 @@ spec:
 EOF
 ----
 
-That's it. Your hosted cluster is now deployed.
+. Apply the `ManagedCluster` resource:
++
+[source,sh]
+----
+oc apply -f ${HOME}/${OCP_CLUSTER_NAME}-managed-cluster.yaml
+----
+
+. Create the `KlusterletAddonConfig` for the managed cluster to deploy all the management agents:
++
+[source,sh]
+----
+cat <<EOF >${HOME}/${OCP_CLUSTER_NAME}-klusterletaddonconfig.yaml
+---
+apiVersion: agent.open-cluster-management.io/v1
+kind: KlusterletAddonConfig
+metadata:
+  name: ${OCP_CLUSTER_NAME}
+  namespace: ${OCP_CLUSTER_NAME}
+spec:
+  clusterName: ${OCP_CLUSTER_NAME}
+  clusterNamespace: ${OCP_CLUSTER_NAME}
+  clusterLabels:
+    cloud: auto-detect
+    vendor: auto-detect
+  applicationManager:
+    enabled: true
+  certPolicyController:
+    enabled: true
+  iamPolicyController:
+    enabled: true
+  policyController:
+    enabled: true
+  searchCollector:
+    enabled: false
+EOF
+----
+
+. Apply the `KlusterletAddonConfig` resource:
++
+[source,sh]
+----
+oc apply -f ${HOME}/${OCP_CLUSTER_NAME}-klusterletaddonconfig.yaml
+----
+
+That's it. Your hosted cluster is now deployed and imported into ACM.
 
 == Destroy Hosted Clusters manually in case of failure
 
