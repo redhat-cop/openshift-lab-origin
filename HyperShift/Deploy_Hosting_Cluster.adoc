@@ -316,3 +316,10 @@ chmod 0700 /home/opentlc-mgr/.aws
 == Deploy policies to be applied to hosted clusters
 [TBD]
 Current state: added authorization policy manually.
+
+
+== Deploy clusters via Pipelines
+
+. Install the Openshift Pipelines Operator (to be added to vars file)
+
+TBD: https://github.com/jnpacker/hypershift-pipelines
