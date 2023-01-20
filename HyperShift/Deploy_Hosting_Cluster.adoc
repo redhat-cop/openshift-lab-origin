@@ -311,5 +311,7 @@ chown -R opentlc-mgr:users /home/opentlc-mgr/.aws
 chmod 0700 /home/opentlc-mgr/.aws
 ----
 
+. Add OpenShift pull secret (from https://console.redhat.com) as `/home/opentlc-mgr/pullsecret.json`
+
 == Deploy policies to be applied to hosted clusters
 [TBD}]
