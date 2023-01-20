@@ -78,6 +78,7 @@ cloud_tags:
 infra_workloads:
 - ocp4_workload_le_certificates
 - ocp4_workload_authentication
+- ocp4_workload_pipelines
 #- ocp4_workload_rhacm
 
 # Do not run any student customization.
@@ -99,11 +100,20 @@ ocp4_workload_authentication_htpasswd_user_password: openshift
 ocp4_workload_authentication_htpasswd_user_count: 5
 ocp4_workload_authentication_remove_kubeadmin: true
 
+# ---------------------------------------------------------
+# OpenShift Pipelines
+# ---------------------------------------------------------
+ocp4_workload_pipelines_channel: pipelines-1.9
+ocp4_workload_pipelines_use_catalog_snapshot: false
+# ocp4_workload_pipelines_catalogsource_name: redhat-operators-snapshot-pipelines
+# ocp4_workload_pipelines_catalog_snapshot_image: quay.io/gpte-devops-automation/olm_snapshot_redhat_catalog
+# ocp4_workload_pipelines_catalog_snapshot_image_tag: v4.12_2023_01_23
+
 # -------------------------------------------------------------------
 # Workload: ocp4_workload_rhacm
 # -------------------------------------------------------------------
 ocp4_workload_rhacm_acm_channel: release-2.7
-# ocp4_workload_rhacm_use_catalog_snapshot: true
+ocp4_workload_rhacm_use_catalog_snapshot: false
 # ocp4_workload_rhacm_catalogsource_name: catalogsource-rhacm
 # ocp4_workload_rhacm_catalog_source_image: "quay.io/gpte-devops-automation/olm_snapshot_redhat_catalog"
 # ocp4_workload_rhacm_catalog_source_tag: "v4.12_2023_01_23"
