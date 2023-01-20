@@ -534,3 +534,112 @@ EOF
 ----
 oc apply -k $HOME/policies/serverless
 ----
+
+= Remove kubeadmin user
+
+When using the `hypershift` CLI to deploy a cluster authentication can only be added after the cluster has been created. Therefore a `kubeadmin` user exists on the cluster. Use the following policy to remove the `kubeadmin` user from all managed clusters.
+
+. Create a directory to hold the files:
++
+[source,sh]
+----
+mkdir -p ${HOME}/policies/kubeadmin-absent
+----
+
+. Create a policy to create the OpenShift kubeadmin-absent Operator subscription:
++
+[source,sh]
+----
+cat << EOF >$HOME/policies/kubeadmin-absent/policy.yaml
+---
+apiVersion: policy.open-cluster-management.io/v1
+kind: Policy
+metadata:
+  name: kubeadmin-absent
+  namespace: rhdp-policies
+spec:
+  remediationAction: enforce
+  disabled: false
+  policy-templates:
+  - objectDefinition:
+      apiVersion: policy.open-cluster-management.io/v1
+      kind: ConfigurationPolicy
+      metadata:
+        name: kubeadmin-absent
+      spec:
+        remediationAction: enforce
+        severity: medium
+        object-templates:
+        - complianceType: mustnothave
+          objectDefinition:
+            apiVersion: v1
+            kind: Secret
+            metadata:
+              name: kubeadmin
+              namespace: kube-system
+EOF
+----
+
+. Create a Placement Rule:
++
+[source,sh]
+----
+cat << EOF >$HOME/policies/kubeadmin-absent/placementrule.yaml
+---
+apiVersion: apps.open-cluster-management.io/v1
+kind: PlacementRule
+metadata:
+  name: kubeadmin-absent
+  namespace: rhdp-policies
+spec:
+  clusterSelector:
+    matchLabels:
+      vendor: OpenShift
+      type: sandbox
+EOF
+----
+
+. Create a Placement Binding:
++
+[source,sh]
+----
+cat << EOF >$HOME/policies/kubeadmin-absent/placementbinding.yaml
+---
+apiVersion: policy.open-cluster-management.io/v1
+kind: PlacementBinding
+metadata:
+  name: kubeadmin-absent
+  namespace: rhdp-policies
+placementRef:
+  apiGroup: apps.open-cluster-management.io
+  kind: PlacementRule
+  name: kubeadmin-absent
+subjects:
+- apiGroup: policy.open-cluster-management.io
+  kind: Policy
+  name: kubeadmin-absent
+EOF
+----
+
+. Create a kustomization file:
++
+[source,sh]
+----
+cat << EOF >$HOME/policies/kubeadmin-absent/kustomization.yaml
+---
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+- policy.yaml
+- placementrule.yaml
+- placementbinding.yaml
+EOF
+----
+
+. Apply the policy to the hub cluster:
++
+[source,sh]
+----
+oc apply -k $HOME/policies/kubeadmin-absent
+----
