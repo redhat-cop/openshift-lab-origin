@@ -475,12 +475,12 @@ spec:
   configuration:
     oauth:
       identityProviders:
-      - htpasswd:
+      - name: htpasswd
+        type: HTPasswd
+        mappingMethod: claim
+        htpasswd:
           fileData:
             name: htpasswd-secret
-        mappingMethod: claim
-        name: htpasswd
-        type: HTPasswd
   controllerAvailabilityPolicy: SingleReplica
   dns:
     baseDomain: ${OCP_BASE_DOMAIN}
