@@ -328,11 +328,172 @@ chmod 0700 /home/opentlc-mgr/.aws
 . Add OpenShift pull secret (from https://console.redhat.com) as `/home/opentlc-mgr/pullsecret.json`
 
 == Deploy policies to be applied to hosted clusters
-[TBD]
-Current state: added authorization policy manually.
+ 
+The policies are hosted in the repository https://github.com/rhpds/hypershift-policies.git.
+
+=== Prerequisite:
+
+A namespace, `rhdp-policies` must exist and the namespace must contain a secret `aws-secret-access-key` that holds the secret access key for the Route53 AWS IAM user.
+
+. Create the namespace:
++
+[source,sh]
+----
+oc create namespace rhdp-policies
+----
+
+. Find the Route53 Access Key that got provisioned (e.g. in ~/ec2-user/.aws/credentials):
+
+. *Manually* create AWS Secret Access Key secret (this information can not be in the GitOps repository):
++
+[source,sh]
+----
+oc create secret generic aws-secret-access-key -n rhdp-policies \
+  --from-literal=secret-access-key=XXXXXXXXX
+----
+
+. Create a directory to hold the bootstrap resources:
++
+[source,sh]
+----
+mkdir -p $HOME/rhacm-bootstrap
+----
+
+. Allow the `admin` and `system:admin` users to deploy policies:
++
+[source,sh]
+----
+cat <<EOF >$HOME/rhacm-bootstrap/clusterrolebinding.yaml
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: open-cluster-management:subscription-admin
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: open-cluster-management:subscription-admin
+subjects:
+- apiGroup: rbac.authorization.k8s.io
+  kind: User
+  name: system:admin
+- apiGroup: rbac.authorization.k8s.io
+  kind: User
+  name: admin
+EOF
+----
+
+. Create the Channel for the repository:
++
+[source,sh]
+----
+cat <<EOF >$HOME/rhacm-bootstrap/channel.yaml
+---
+apiVersion: apps.open-cluster-management.io/v1
+kind: Channel
+metadata:
+  name: hypershift-configuration
+  namespace: rhdp-policies
+  annotations:
+    apps.open-cluster-management.io/reconcile-rate: high
+spec:
+  pathname: https://github.com/rhpds/hypershift-policies.git
+  type: Git
+EOF
+----
+
+. Create a placement rule:
++
+[source,sh]
+----
+cat <<EOF >$HOME/rhacm-bootstrap/placementrule.yaml
+---
+apiVersion: apps.open-cluster-management.io/v1
+kind: PlacementRule
+metadata:
+  name: hypershift-configuration
+  namespace: rhdp-policies
+spec:
+  clusterSelector:
+    matchLabels:
+      local-cluster: 'true'
+EOF
+----
+
+. Create a subscription:
++
+[source,sh]
+----
+cat <<EOF >$HOME/rhacm-bootstrap/subscription.yaml
+---
+apiVersion: apps.open-cluster-management.io/v1
+kind: Subscription
+metadata:
+  name: hypershift-configuration
+  namespace: rhdp-policies
+  annotations:
+    apps.open-cluster-management.io/git-branch: main
+    apps.open-cluster-management.io/git-path: "/"
+    apps.open-cluster-management.io/reconcile-option: merge
+  labels:
+    app: hypershift-configuration
+spec:
+  channel: rhdp-policies/hypershift-configuration
+  placement:
+    placementRef:
+      kind: PlacementRule
+      name: hypershift-configuration
+EOF
+----
+
+. Create the application:
++
+[source,sh]
+----
+cat <<EOF >$HOME/rhacm-bootstrap/application.yaml
+---
+apiVersion: app.k8s.io/v1beta1
+kind: Application
+metadata:
+  name: hypershift-configuration
+  namespace: rhdp-policies
+spec:
+  componentKinds:
+  - group: apps.open-cluster-management.io
+    kind: Subscription
+  selector:
+    matchLabels:
+      app: hypershift-configuration
+EOF
+----
+
+. Create the kustomization file:
++
+[source,sh]
+----
+cat <<EOF >$HOME/rhacm-bootstrap/kustomization.yaml
+---
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+- clusterrolebinding.yaml
+- channel.yaml
+- placementrule.yaml
+- subscription.yaml
+- application.yaml
+EOF
+----
+
+. Apply the policies to the hub cluster:
++
+[source,sh]
+----
+oc apply -k $HOME/rhacm-bootstrap
+----
 
 
-== Deploy clusters via Pipelines
+== Deploy clusters via Pipelines (future possible change)
 
 . Install the Openshift Pipelines Operator (to be added to vars file)
 
