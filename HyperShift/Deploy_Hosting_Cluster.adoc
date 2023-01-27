@@ -42,7 +42,7 @@ aws_region: us-east-2
 ssh_authorized_keys:
 - key: https://github.com/wkulhanek.keys
 
-master_instance_type: m5a.xlarge
+master_instance_type: m5a.2xlarge
 master_instance_count: 3
 master_storage_type: io1
 master_storage_size: 250
