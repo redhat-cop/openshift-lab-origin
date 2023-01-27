@@ -328,7 +328,7 @@ chmod 0700 /home/opentlc-mgr/.aws
 . Add OpenShift pull secret (from https://console.redhat.com) as `/home/opentlc-mgr/pullsecret.json`
 
 == Deploy policies to be applied to hosted clusters
- 
+
 The policies are hosted in the repository https://github.com/rhpds/hypershift-policies.git.
 
 === Prerequisite:
@@ -492,6 +492,202 @@ EOF
 oc apply -k $HOME/rhacm-bootstrap
 ----
 
+== Configure Machine Management (Autoscale / Health checks)
+
+After the cluster has been provisioned it's a good idea to configure auto scaling as well as machine health checks to make sure the cluster has enough capacity.
+The cluster has been deployed with `m5a.2xlarge` worker nodes which have 8 CPUs and 32GB of memory. These characteristics have to be considered when setting up the cluster autoscaler. Also we will initially set up the autoscaler to use 1 for the minimum and 6 for the maximum number of machines for each machine set - making the total number of machines 12.
+
+. Create a directory to hold the machine management resources:
++
+[source,sh]
+----
+mkdir -p ${HOME}/machinemanagement
+----
+
+. Determine the existing MachineSets (note that we will only use 2 of the three machinesets to avoid spreading out over too many availability zones)
++
+[source,sh]
+----
+oc get machineset -n openshift-machine-api
+----
++
+.Sample Output
+[source,texinfo]
+----
+NAME                                    DESIRED   CURRENT   READY   AVAILABLE   AGE
+cluster-hyper-s9qzv-worker-us-east-2a   1         1         1       1           7d18h
+cluster-hyper-s9qzv-worker-us-east-2b   1         1         1       1           7d18h
+cluster-hyper-s9qzv-worker-us-east-2c   0         0                             7d18h
+----
+
+. Set some variables to use when creating configuration files:
++
+[source,sh]
+----
+export MS1=cluster-hyper-s9qzv-worker-us-east-2a
+export MS2=cluster-hyper-s9qzv-worker-us-east-2b
+export MS3=cluster-hyper-s9qzv-worker-us-east-2c
+----
+
+. Patch the MachineSets to use `Oldest` as the `deletionPolicy`:
++
+[source,sh]
+----
+oc patch machineset ${MS1} -n openshift-machine-api --type=merge --patch='{"spec":{"deletePolicy":"Oldest"}}'
+oc patch machineset ${MS2} -n openshift-machine-api --type=merge --patch='{"spec":{"deletePolicy":"Oldest"}}'
+oc patch machineset ${MS3} -n openshift-machine-api --type=merge --patch='{"spec":{"deletePolicy":"Oldest"}}'
+----
+
+. Create a `MachineAutoscaler` for the first two machine sets:
++
+[source,sh]
+----
+cat <<EOF >${HOME}/machinemanagement/ma-${MS1}.yaml
+---
+apiVersion: autoscaling.openshift.io/v1beta1
+kind: MachineAutoscaler
+metadata:
+  name: ma-${MS1}
+  namespace: openshift-machine-api
+spec:
+  minReplicas: 1
+  maxReplicas: 6
+  scaleTargetRef:
+    apiVersion: machine.openshift.io/v1beta1
+    kind: MachineSet
+    name: ${MS1}
+EOF
+
+cat <<EOF >${HOME}/machinemanagement/ma-${MS2}.yaml
+---
+apiVersion: autoscaling.openshift.io/v1beta1
+kind: MachineAutoscaler
+metadata:
+  name: ma-${MS2}
+  namespace: openshift-machine-api
+spec:
+  minReplicas: 1
+  maxReplicas: 6
+  scaleTargetRef:
+    apiVersion: machine.openshift.io/v1beta1
+    kind: MachineSet
+    name: ${MS2}
+EOF
+----
+
+. Create the Cluster Autoscaler (remember the instance types and their sizes. The autoscaler size is double that capacity to leave room for growth):
++
+[source,sh]
+----
+cat <<EOF >${HOME}/machinemanagement/cluster-autoscaler.yaml
+---
+apiVersion: autoscaling.openshift.io/v1
+kind: ClusterAutoscaler
+metadata:
+  name: default
+spec:
+  balanceSimilarNodeGroups: true
+  podPriorityThreshold: -10
+  resourceLimits:
+    maxNodesTotal: 12
+    cores:
+      min: 16
+      max: 192
+    memory:
+      min: 64
+      max: 768
+  scaleDown:
+    enabled: true
+    delayAfterAdd: 15m
+    delayAfterDelete: 5m
+    delayAfterFailure: 5m
+    unneededTime: 60s
+EOF
+----
+
+. Create Machine Health Checks for all three machine sets
++
+[source,sh]
+----
+cat <<EOF >${HOME}/machinemanagement/mhc-${MS1}.yaml
+---
+apiVersion: machine.openshift.io/v1beta1
+kind: MachineHealthCheck
+metadata:
+  name: mhc-${MS1}
+  namespace: openshift-machine-api
+spec:
+  selector:
+    matchLabels:
+      machine.openshift.io/cluster-api-machine-role: worker
+      machine.openshift.io/cluster-api-machine-type: worker
+      machine.openshift.io/cluster-api-machineset: ${MS1}
+  unhealthyConditions:
+  - type:    "Ready"
+    timeout: "300s"
+    status: "False"
+  - type:    "Ready"
+    timeout: "300s"
+    status: "Unknown"
+  maxUnhealthy: "40%"
+  nodeStartupTimeout: "10m"
+EOF
+
+cat <<EOF >${HOME}/machinemanagement/mhc-${MS2}.yaml
+---
+apiVersion: machine.openshift.io/v1beta1
+kind: MachineHealthCheck
+metadata:
+  name: mhc-${MS2}
+  namespace: openshift-machine-api
+spec:
+  selector:
+    matchLabels:
+      machine.openshift.io/cluster-api-machine-role: worker
+      machine.openshift.io/cluster-api-machine-type: worker
+      machine.openshift.io/cluster-api-machineset: ${MS2}
+  unhealthyConditions:
+  - type:    "Ready"
+    timeout: "300s"
+    status: "False"
+  - type:    "Ready"
+    timeout: "300s"
+    status: "Unknown"
+  maxUnhealthy: "40%"
+  nodeStartupTimeout: "10m"
+EOF
+
+cat <<EOF >${HOME}/machinemanagement/mhc-${MS3}.yaml
+---
+apiVersion: machine.openshift.io/v1beta1
+kind: MachineHealthCheck
+metadata:
+  name: mhc-${MS3}
+  namespace: openshift-machine-api
+spec:
+  selector:
+    matchLabels:
+      machine.openshift.io/cluster-api-machine-role: worker
+      machine.openshift.io/cluster-api-machine-type: worker
+      machine.openshift.io/cluster-api-machineset: ${MS3}
+  unhealthyConditions:
+  - type:    "Ready"
+    timeout: "300s"
+    status: "False"
+  - type:    "Ready"
+    timeout: "300s"
+    status: "Unknown"
+  maxUnhealthy: "40%"
+  nodeStartupTimeout: "10m"
+EOF
+----
+
+. Apply all resources to the cluster:
++
+[source,sh]
+----
+for resource in ${HOME}/machinemanagement/*.yaml; do; oc apply -f ${resource}; done
+----
 
 == Deploy clusters via Pipelines (future possible change)
 
