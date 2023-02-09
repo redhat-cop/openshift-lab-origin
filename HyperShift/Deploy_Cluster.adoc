@@ -167,14 +167,14 @@ That means that your control plane has been configured and the cluster is now de
 +
 [source,sh]
 ----
-oc get secret production-kubeadmin-password -n local-cluster --template='{{ .data.password }}' | base64 -d >$HOME/.kube/production.kubeadmin-password
+oc get secret production-kubeadmin-password -n clusters --template='{{ .data.password }}' | base64 -d >$HOME/.kube/production.kubeadmin-password
 ----
 
 . Retrieve the kukbeconfig file to access your new cluster and save it to a file in the `$HOME/.kube` directory:
 +
 [source,sh]
 ----
-oc get secret production-admin-kubeconfig -n local-cluster --template='{{ .data.kubeconfig }}' | base64 -d >$HOME/.kube/production-kubeconfig
+oc get secret production-admin-kubeconfig -n clusters --template='{{ .data.kubeconfig }}' | base64 -d >$HOME/.kube/production-kubeconfig
 ----
 
 . Set your `KUBECONFIG` variable to use the production cluster configuration:
