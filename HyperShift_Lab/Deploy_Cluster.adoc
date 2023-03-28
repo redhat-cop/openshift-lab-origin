@@ -1,26 +1,15 @@
-= Deploying Clusters using HyperShift
-
-== Docs
-
-* RHACM 2.5: https://access.redhat.com/documentation/en-us/red_hat_advanced_cluster_management_for_kubernetes/2.5/html/clusters/managing-your-clusters#hosted-control-plane-intro
-* RHACM 2.6: https://access.redhat.com/documentation/en-us/red_hat_advanced_cluster_management_for_kubernetes/2.6/html/multicluster_engine/multicluster_engine_overview#hosted-control-planes-intro
-
-== Prerequisites
-
-* A deployed environment from https://demo.redhat.com[Red Hat Product Demo System (Beta)].
-* An understanding of the https://github.com/redhat-cop/openshift-lab-origin/blob/master/HyperShift/Introduction.adoc[Introduction] lab
+= Deploying Clusters using Hosted Control Planes
 
 == Overview
 
-Now that you have an environment with the HyperShift Technology Preview enabled it's time to deploy your first cluster. You will see that is it both easy and fast to create a new cluster using this approach.
+Now that you have an environment with the hosted control planes (HyperShift) technology preview enabled it's time to deploy your first cluster. You will see that is it both easy and fast to create a new cluster using this approach.
 
-Right now the only way to deploy a new cluster is by creating a YAML manifest via the command line - there is no capability in the console yet.
+Right now the only way to deploy a new cluster is by using the `hypershift` CLI tool - there is no capability in the console yet. Well, there is an entry to deploy a new cluster in the console but it just shows the commands necessary for the command line.
 
 == Deploy a new cluster
 
-In order to deploy a new cluster you need to create a Kubernetes resource of kind `HypershiftDeployment`.
+. Log into your bastion VM if you are not already logged in - the instructions are in the introduction document.
 
-. Log into your Bastion VM if you are not already logged in - the instructions are in the welcome e-mail that you got when you provisioned the environment.
 . Create a new YAML file `production.yaml` that will deploy your "production" cluster. It will be similar to the development cluster except that it will be deployed in 2 Zones rather than just one.
 +
 [source,sh]

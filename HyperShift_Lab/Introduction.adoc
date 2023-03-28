@@ -1,0 +1,74 @@
+= Deploying Clusters using Hosted Control Planes
+
+== Introduction
+
+This Red Hat Product Demo System catalog item allows you to use, demonstrate and learn OpenShift clusters using *Hosted Control Planes* (also sometimes referred to as *Hypershift*).
+
+[TIP]
+====
+If you received a link to this document and need an environment then go to the https://demo.redhat.com[RedHat Product Demo System] and find the catalog item *Red Hat Advanced Cluster Management with HyperShift* in the *Demos* folder. You can also type *hypershift* into the search box to find the catalog item.
+
+Make sure you provision an environment before continuing. Provisioning should take approximately an hour.
+====
+
+Using hosted control planes is a way to deploy the Control Plane of Red Hat OpenShift Container Platform clusters as pods on other clusters dramatically decreasing the time it takes to provision a new cluster. Worker nodes are still deployed as virtual machines and managed using the new `Machine.cluster.x-k8s.io/v1beta1` API.
+
+Hosted control planes are currently in Tech Preview on Red Hat Advanced Cluster Management for Kubernetes version 2.7.
+
+The catalog item deploys the following environment::
+
+* OpenShift Container Platform 4.12.
+* Red Hat Advanced Cluster Management for Kubernetes (RHACM) 2.7 installed and configured.
+* Technology preview for HyperShift enabled and configured on RHACM.
+* A small "development" cluster has been pre-deployed using hosted control planes.
+
+The instructions cover the following scenarios:
+
+* Introduction (this document)
+* Explore the pre-installed environment (this document)
+* https://github.com/redhat-cop/openshift-lab-origin/blob/master/HyperShift_Lab/Explore_Environment.adoc[Exploring the Environment]
+* https://github.com/redhat-cop/openshift-lab-origin/blob/master/HyperShift_Lab/Deploy_Cluster.adoc[Deploy a cluster using HyperShift]
+* https://github.com/redhat-cop/openshift-lab-origin/blob/master/HyperShift_Lab/Deploy_Application.adoc[Deploy an application to both clusters using RHACM]
+
+== Documentation
+
+Further documentation about enabling, configuring and using hosted control planes can be found at the following link:
+
+* RHACM 2.7: https://access.redhat.com/documentation/en-us/red_hat_advanced_cluster_management_for_kubernetes/2.7/html/clusters/cluster_mce_overview#hosted-control-planes-intro
+
+== Information you will need
+
+Once your environment has been provisioned the following information will be available in the service page of your Environment on the Red Hat Demo System. You will also receive an e-mail with the following information:
+
+[source,text]
+----
+Openshift Console: https://console-openshift-console.apps.cluster-rrjmf.sandbox2589.opentlc.com
+
+Openshift API for command line 'oc' client: https://api.cluster-rrjmf.sandbox2589.opentlc.com:6443
+
+Download oc client from http://d3s3zqyaz8cp2d.cloudfront.net/pub/openshift-v4/clients/ocp/stable-4.11/openshift-client-linux.tar.gz
+
+HTPasswd Authentication is enabled on this cluster.
+
+Users user1 .. user2 are created with password openshift
+
+User admin with password r3dh4t1! is cluster admin.
+
+You can access your bastion via SSH: ssh lab-user@bastion.rrjmf.sandbox2589.opentlc.com
+
+Make sure you use the username 'lab-user' and the password '2gQ8Lmqpdg56' when prompted.
+----
+
+Make note of the following information:
+
+* The SSH command to connect to you environment's bastion's VM
+* The password to be used with user `lab-user` on the bastion VM
+* Also the OpenShift console URL along with the credentials for the `admin` user.
+
+There is plenty more information below what is illustrated above. But all of those properties have already been set up in your environment.
+
+== Next steps
+
+This concludes the introduction section of this lab. 
+
+Follow https://github.com/redhat-cop/openshift-lab-origin/blob/master/HyperShift_Lab/Explore_Environment.adoc[Exploring the Environment] to explore what has been pre-deployed for you.

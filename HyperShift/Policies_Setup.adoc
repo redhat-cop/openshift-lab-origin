@@ -761,13 +761,11 @@ resources:
 
 Find the Route53 Access Key that got provisioned (e.g. in ~/ec2-user/.aws/credentials).
 
-
 *Manually* create AWS Secret Access Key secret:
 +
 [source,sh]
 ----
-oc create secret generic aws-secret-access-key -n rhdp-policies \
-  --from-literal=secret-access-key=XXXXXXXXX
+oc create secret generic aws-secret-access-key -n rhdp-policies --from-literal=secret-access-key=XXXXXXXXX
 ----
 
 . Create a directory to hold the files:

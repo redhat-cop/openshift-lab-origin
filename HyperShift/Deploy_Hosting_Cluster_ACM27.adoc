@@ -1,0 +1,558 @@
+
+= Instructions to deploy a Hosting (Hub) Cluster using RHACM 2.7
+
+:numbered:
+:toc:
+
+These instructions are to deploy and configure a hub cluster for RHPD PoC use. This cluster ban be used as a target cluster for new catalog items in RHPD which deploy OpenShift clusters using Hosted Control Planes.
+
+== Deploy Hub Cluster
+
+Use an AWS account that is outside of a Sandbox - Hypershift will need EIPs, Load Balancers, NAT Gateways etc and would run into capacity restrictions really quickly in a Sandbox account.
+
+[NOTE]
+----
+The current PoC cluster is deployed in the `development` AWS account and uses the base domain `hyper.dev.redhatworkshops.io`.
+----
+
+[WARNING]
+====
+There currently is a bug in both OCP (fixed in 4.12.5) and RHACM's hypershift CLI. Therefore it is necessary to manually build the `hypershift` CLI tool from source. The bug is around permissions of created resources in AWS and prevents orderly destroying of hosted control plane clusters.
+====
+
+Use the following vars file to deploy a new OpenShift 4.12 cluster:
+
+.OpenShift 4.12 Cluster Vars
+[source,yaml]
+----
+# -------------------------------------------------------------------
+# Mandatory Variables
+# -------------------------------------------------------------------
+cloud_provider: ec2
+env_type: ocp4-cluster
+software_to_deploy: openshift4
+# -------------------------------------------------------------------
+# End Mandatory Variables
+# -------------------------------------------------------------------
+
+platform: labs
+purpose: production
+
+agnosticd_aws_capacity_reservation_enable: false
+aws_region: us-east-2
+
+ssh_authorized_keys:
+- key: https://github.com/wkulhanek.keys
+
+master_instance_type: m5a.2xlarge
+master_instance_count: 3
+master_storage_type: io1
+master_storage_size: 250
+worker_instance_type: m5a.4xlarge
+worker_instance_count: 3
+worker_storage_type: gp3
+worker_storage_size: 250
+bastion_instance_type: t3a.medium
+bastion_instance_image: RHEL84GOLD-latest
+
+install_ftl: false
+install_student_user: false
+
+ocp4_installer_version: "4.12.5"
+ocp4_installer_root_url: http://mirror.openshift.com/pub/openshift-v4/clients
+
+ocp4_network_type: OVNKubernetes
+
+repo_method: satellite
+update_packages: true
+run_smoke_tests: false
+
+# Change requirements.yaml from ocp4-cluster to include community.crypto
+requirements_content:
+  collections:
+  - name: kubernetes.core
+    version: 2.4.0
+  - name: amazon.aws
+    version: 2.3.0
+  - name: community.general
+    version: 6.3.0
+  - name: ansible.posix
+    version: 1.5.1
+  - name: community.crypto
+    version: 2.10.0
+
+cloud_tags:
+- owner: wkulhane@redhat.com
+- Purpose: production
+- env_type: "{{ env_type }}"
+- guid: "{{ guid }}"
+
+infra_workloads:
+- ocp4_workload_machinesets
+- ocp4_workload_le_certificates
+- ocp4_workload_authentication
+- ocp4_workload_pipelines
+- ocp4_workload_rhacm
+- ocp4_workload_rhacm_hypershift
+
+# Do not run any student customization.
+student_workloads: []
+
+# -------------------------------------------------------------------
+# Workload variables
+# -------------------------------------------------------------------
+
+# -------------------------------------------------------------------
+# ocp4_workload_machinesets
+# -------------------------------------------------------------------
+
+# Replace default MachineSets
+ocp4_workload_machinesets_disable_default_machinesets: true
+
+# Add MachineSets for autoscaled worker instances
+ocp4_workload_machinesets_machineset_groups:
+- name: autoscaled
+  role: autoscaled
+  instance_type: m5a.4xlarge
+  root_volume_size: 250
+  root_volume_type: gp3
+  autoscale: true
+  total_replicas: 3
+  # Autoscaler settings - minimum and maximum number of Machines
+  total_replicas_min: 3
+  total_replicas_max: 15
+
+# -------------------------------------------------------------------
+# Workload: ocp4_workload_authentication
+# -------------------------------------------------------------------
+ocp4_workload_authentication_idm_type: htpasswd
+ocp4_workload_authentication_admin_user: admin
+# ocp4_workload_authentication_htpasswd_admin_password: ""
+ocp4_workload_authentication_htpasswd_user_base: user
+# ocp4_workload_authentication_htpasswd_user_password: ""
+ocp4_workload_authentication_htpasswd_user_count: 100
+ocp4_workload_authentication_remove_kubeadmin: true
+
+# ---------------------------------------------------------
+# OpenShift Pipelines
+# ---------------------------------------------------------
+ocp4_workload_pipelines_channel: pipelines-1.9
+ocp4_workload_pipelines_use_catalog_snapshot: false
+# ocp4_workload_pipelines_catalogsource_name: redhat-operators-snapshot-pipelines
+# ocp4_workload_pipelines_catalog_snapshot_image: quay.io/gpte-devops-automation/olm_snapshot_redhat_catalog
+# ocp4_workload_pipelines_catalog_snapshot_image_tag: v4.12_2023_02_20
+
+# -------------------------------------------------------------------
+# Workload: ocp4_workload_rhacm
+# -------------------------------------------------------------------
+ocp4_workload_rhacm_acm_channel: release-2.7
+ocp4_workload_rhacm_use_catalog_snapshot: false
+# ocp4_workload_rhacm_catalogsource_name: catalogsource-rhacm
+# ocp4_workload_rhacm_catalog_source_image: "quay.io/gpte-devops-automation/olm_snapshot_redhat_catalog"
+# ocp4_workload_rhacm_catalog_source_tag: "v4.12_2023_02_20"
+
+# -------------------------------------------------------------------
+# Workload: ocp4_workload_rhacm_hypershift
+# -------------------------------------------------------------------
+ocp4_workload_rhacm_hypershift_deploy_clusters: []
+----
+
+=== Build and install the Hypershift CLI
+
+Currently there is a bug in the Hypershift CLI that's hosted on the cluster.  Therefore it is necessary to build the Hypershift CLI from source.
+
+. Install make
++
+[source,sh]
+----
+sudo dnf -y install make
+----
+
+. Download and install the `yq` binary
++
+[source,sh]
+----
+sudo wget https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64 -O /usr/bin/yq
+sudo chmod +x /usr/bin/yq
+----
+
+. Install go
++
+[source,sh]
+----
+wget https://go.dev/dl/go1.20.1.linux-amd64.tar.gz
+sudo tar -C /usr/local -xzf go1.20.1.linux-amd64.tar.gz
+rm go1.20.1.linux-amd64.tar.gz
+echo "export PATH=$PATH:/usr/local/go/bin" >>~/.bashrc
+source ~/.bashrc
+----
+
+. Download, build and install the Hypershift CLI
++
+[source,sh]
+----
+git clone https://github.com/openshift/hypershift.git
+cd hypershift
+make hypershift
+sudo install -m 0755 bin/hypershift /usr/bin/hypershift
+cd $HOME
+----
+
+[NOTE]
+====
+In the future you can download the Hypershift CLI from the cluster.
+
+. You can retrieve the URL like this:
++
+[source,sh]
+----
+oc get consoleclidownload hypershift-cli-download -o json | jq -r '.spec.links[] | select(.href | contains ("linux/amd64")).href'
+----
++
+.Sample Output
+[source,texinfo]
+----
+https://hypershift-cli-download-multicluster-engine.apps.cluster-hyper.hyper.dev.redhatworkshops.io/linux/amd64/hypershift.tar.gz
+----
+
+. Download and install the Hypershift CLI:
++
+[source,sh]
+----
+cd $HOME
+
+wget -O $HOME/hypershift.tar.gz $(oc get consoleclidownload hypershift-cli-download -o json | jq -r '.spec.links[] | select(.href | contains ("linux/amd64")).href')
+
+tar --strip-components=5 -xzvf $HOME/hypershift.tar.gz
+
+sudo install -o root -g root -m 0775 $HOME/hypershift /usr/bin/hypershift
+----
+====
+
+Your Red Hat Advanced Cluster Management for Kubernetes is now configured for the Hypershift Tech Preview.
+
+== Set up `opentlc-mgr` user
+
+RHDP uses the `opentlc-mgr` user on the bastion VM to deploy things. Therefore this user needs to be created and configured on the bastion VM.
+
+. Switch to root:
++
+[source,sh]
+----
+sudo -i
+----
+
+. Add the `opentlc-mgr` user:
++
+[source,sh]
+----
+adduser opentlc-mgr
+----
+
+. Set up `.kube/config` to allow `opentlc-mgr` to work as `system:admin` on the cluster.
++
+[source,sh]
+----
+cp -R /home/ec2-user/.kube /home/opentlc-mgr
+chown -R opentlc-mgr:users /home/opentlc-mgr/.kube
+----
+
+. Set up SSH configuration for `opentlc-mgr`:
++
+[source,sh]
+----
+mkdir /home/opentlc-mgr/.ssh
+----
+
+. Add the `opentlc-mgr` *public SSH key* to be used from RHPD to the `authorized_keys` file.
++
+[source,sh]
+----
+cat <<EOF >/home/opentlc-mgr/.ssh/authorized_keys
+# OpenTLC Admin Backdoor
+ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCvZvn+GL0wTOsAdh1ikIQoqj2Fw/RA6F14O347rgKdpkgOQpGQk1k2gM8wcla2Y1o0bPIzwlNy1oh5o9uNjZDMeDcEXWuXbu0cRBy4pVRhh8a8zAZfssnqoXHHLyPyHWpdTmgIhr0UIGYrzHrnySAnUcDp3gJuE46UEBtrlyv94cVvZf+EZUTaZ+2KjTRLoNryCn7vKoGHQBooYg1DeHLcLSRWEADUo+bP0y64+X/XTMZOAXbf8kTXocqAgfl/usbYdfLOgwU6zWuj8vxzAKuMEXS1AJSp5aeqRKlbbw40IkTmLoQIgJdb2Zt98BH/xHDe9xxhscUCfWeS37XLp75J
+
+# AgnosticD Config opentlc/SHARED_OCP412_HYPERSHIFT_CLUSTER
+ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDm/eeXtVCndZiIcOK3DZUTYAU5a1hbkakM99x6HRNmeRJhoPUEP9jcVAdQdLmvOvNaZHQwonDl2xxXCP0FaOnNw8ARL9z8Y4s9+QZ/yf8V7fHgy3EVxXZOMslENVMiZFch1M9bnoQVe7e91+MfZR26mxLJqydjez2R1Hx3u85WIZFzKo7v2XqB3yXuGMRwdwsZI9zFq9CUSexAW43ctDKyt6v1xQPhpJ3RjJOCo0aGOpQhP0/vlOoeAYgm9+C2oeSBmXGNd44SsU0TfiZuRvLUJvOP8Kd8kwwExzgW4K7Oo+PF9hinivaUxE2tG246UHpgjH6XOuSjl/l68PP3cv0F
+EOF
+----
+
+. Change permissions for the directory and file:
++
+[source,sh]
+----
+chown -R opentlc-mgr:users /home/opentlc-mgr/.ssh
+chmod 0700 /home/opentlc-mgr/.ssh
+chmod 0644 /home/opentlc-mgr/.ssh/*
+----
+
+. Exit the root shell
++
+[source,sh]
+----
+exit
+----
+
+== Deploy policies to be applied to hosted clusters
+
+The policies are hosted in the repository https://github.com/rhpds/hypershift-policies.git.
+
+=== Prerequisite:
+
+A namespace, `rhdp-policies` must exist and the namespace must contain a secret `aws-secret-access-key` that holds the secret access key for the Route53 AWS IAM user.
+
+. Create the namespace:
++
+[source,sh]
+----
+oc create namespace rhdp-policies
+----
+
+. Find the Route53 Access Key that got provisioned in `~/ec2-user/.aws/credentials`:
+. *Manually* create AWS Secret Access Key secret (this information can not be in the GitOps repository):
++
+[source,sh]
+----
+oc create secret generic aws-secret-access-key -n rhdp-policies --from-literal=secret-access-key=XXXXXXXXX
+----
+
+[NOTE]
+====
+The matching access key must be provided to the workload to deploy new clusters.
+====
+
+. Create a directory to hold the bootstrap resources:
++
+[source,sh]
+----
+mkdir -p $HOME/rhacm-bootstrap
+----
+
+. Allow the `admin` and `system:admin` users to deploy policies:
++
+[source,sh]
+----
+cat <<EOF >$HOME/rhacm-bootstrap/clusterrolebinding.yaml
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: open-cluster-management:subscription-admin
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: open-cluster-management:subscription-admin
+subjects:
+- apiGroup: rbac.authorization.k8s.io
+  kind: User
+  name: system:admin
+- apiGroup: rbac.authorization.k8s.io
+  kind: User
+  name: admin
+EOF
+----
+
+. Create the Channel for the repository:
++
+[source,sh]
+----
+cat <<EOF >$HOME/rhacm-bootstrap/channel.yaml
+---
+apiVersion: apps.open-cluster-management.io/v1
+kind: Channel
+metadata:
+  name: hypershift-configuration
+  namespace: rhdp-policies
+  annotations:
+    apps.open-cluster-management.io/reconcile-rate: medium
+spec:
+  pathname: https://github.com/rhpds/hypershift-policies.git
+  type: Git
+EOF
+----
+
+. Create a placement rule:
++
+[source,sh]
+----
+cat <<EOF >$HOME/rhacm-bootstrap/placementrule.yaml
+---
+apiVersion: apps.open-cluster-management.io/v1
+kind: PlacementRule
+metadata:
+  name: hypershift-configuration
+  namespace: rhdp-policies
+spec:
+  clusterSelector:
+    matchLabels:
+      local-cluster: 'true'
+EOF
+----
+
+. Create a subscription:
++
+[source,sh]
+----
+cat <<EOF >$HOME/rhacm-bootstrap/subscription.yaml
+---
+apiVersion: apps.open-cluster-management.io/v1
+kind: Subscription
+metadata:
+  name: hypershift-configuration
+  namespace: rhdp-policies
+  annotations:
+    apps.open-cluster-management.io/git-branch: main
+    apps.open-cluster-management.io/git-path: "/"
+    apps.open-cluster-management.io/reconcile-option: merge
+  labels:
+    app: hypershift-configuration
+spec:
+  channel: rhdp-policies/hypershift-configuration
+  placement:
+    placementRef:
+      kind: PlacementRule
+      name: hypershift-configuration
+EOF
+----
+
+. Create the application:
++
+[source,sh]
+----
+cat <<EOF >$HOME/rhacm-bootstrap/application.yaml
+---
+apiVersion: app.k8s.io/v1beta1
+kind: Application
+metadata:
+  name: hypershift-configuration
+  namespace: rhdp-policies
+spec:
+  componentKinds:
+  - group: apps.open-cluster-management.io
+    kind: Subscription
+  selector:
+    matchLabels:
+      app: hypershift-configuration
+EOF
+----
+
+. Create the kustomization file:
++
+[source,sh]
+----
+cat <<EOF >$HOME/rhacm-bootstrap/kustomization.yaml
+---
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+resources:
+- clusterrolebinding.yaml
+- channel.yaml
+- placementrule.yaml
+- subscription.yaml
+- application.yaml
+EOF
+----
+
+. Apply the policies to the hub cluster:
++
+[source,sh]
+----
+oc apply -k $HOME/rhacm-bootstrap
+----
+
+== Configure Machine Management (Autoscale / Health checks)
+
+The configuration above sets up autoscaling for the worker nodes. But it does not (yet) set up `MachineHealthCheck` resources.
+
+WKTBD: Set MS1/MS2/MS3 variables based on created machinesets
+
+. Create Machine Health Checks for all three machine sets
++
+[source,sh]
+----
+cat <<EOF >${HOME}/machinemanagement/mhc-${MS1}.yaml
+---
+apiVersion: machine.openshift.io/v1beta1
+kind: MachineHealthCheck
+metadata:
+  name: mhc-${MS1}
+  namespace: openshift-machine-api
+spec:
+  selector:
+    matchLabels:
+      machine.openshift.io/cluster-api-machine-role: worker
+      machine.openshift.io/cluster-api-machine-type: worker
+      machine.openshift.io/cluster-api-machineset: ${MS1}
+  unhealthyConditions:
+  - type:    "Ready"
+    timeout: "300s"
+    status: "False"
+  - type:    "Ready"
+    timeout: "300s"
+    status: "Unknown"
+  maxUnhealthy: "40%"
+  nodeStartupTimeout: "10m"
+EOF
+
+cat <<EOF >${HOME}/machinemanagement/mhc-${MS2}.yaml
+---
+apiVersion: machine.openshift.io/v1beta1
+kind: MachineHealthCheck
+metadata:
+  name: mhc-${MS2}
+  namespace: openshift-machine-api
+spec:
+  selector:
+    matchLabels:
+      machine.openshift.io/cluster-api-machine-role: worker
+      machine.openshift.io/cluster-api-machine-type: worker
+      machine.openshift.io/cluster-api-machineset: ${MS2}
+  unhealthyConditions:
+  - type:    "Ready"
+    timeout: "300s"
+    status: "False"
+  - type:    "Ready"
+    timeout: "300s"
+    status: "Unknown"
+  maxUnhealthy: "40%"
+  nodeStartupTimeout: "10m"
+EOF
+
+cat <<EOF >${HOME}/machinemanagement/mhc-${MS3}.yaml
+---
+apiVersion: machine.openshift.io/v1beta1
+kind: MachineHealthCheck
+metadata:
+  name: mhc-${MS3}
+  namespace: openshift-machine-api
+spec:
+  selector:
+    matchLabels:
+      machine.openshift.io/cluster-api-machine-role: worker
+      machine.openshift.io/cluster-api-machine-type: worker
+      machine.openshift.io/cluster-api-machineset: ${MS3}
+  unhealthyConditions:
+  - type:    "Ready"
+    timeout: "300s"
+    status: "False"
+  - type:    "Ready"
+    timeout: "300s"
+    status: "Unknown"
+  maxUnhealthy: "40%"
+  nodeStartupTimeout: "10m"
+EOF
+----
+
+. Apply all resources to the cluster:
++
+[source,sh]
+----
+for resource in ${HOME}/machinemanagement/*.yaml; do; oc apply -f ${resource}; done
+----
+
+== Deploy clusters via Pipelines (future possible change)
+
+. Install the Openshift Pipelines Operator (to be added to vars file)
+
+TBD: https://github.com/jnpacker/hypershift-pipelines
