@@ -40,32 +40,22 @@ Further documentation about enabling, configuring and using hosted control plane
 
 Once your environment has been provisioned the following information will be available in the service page of your Environment on the Red Hat Demo System. You will also receive an e-mail with the following information:
 
-[source,text]
-----
-Openshift Console: https://console-openshift-console.apps.cluster-rrjmf.sandbox2589.opentlc.com
-
-Openshift API for command line 'oc' client: https://api.cluster-rrjmf.sandbox2589.opentlc.com:6443
-
-Download oc client from http://d3s3zqyaz8cp2d.cloudfront.net/pub/openshift-v4/clients/ocp/stable-4.11/openshift-client-linux.tar.gz
-
-HTPasswd Authentication is enabled on this cluster.
-
-Users user1 .. user2 are created with password openshift
-
-User admin with password r3dh4t1! is cluster admin.
-
-You can access your bastion via SSH: ssh lab-user@bastion.rrjmf.sandbox2589.opentlc.com
-
-Make sure you use the username 'lab-user' and the password '2gQ8Lmqpdg56' when prompted.
-----
+|===
+|Console URL|https://console-openshift-console.apps.cluster-p6mj8.sandbox2651.opentlc.com
+|Cluster admin user|admin
+|Cluster admin password|EDdYfrIoygYEPP4n
+|Cluster users|user1 .. user2
+|Cluster user (common) password|3pNVc0JCPRZeby4i
+|SSH command to connect to the bastion VM|ssh lab-user@bastion.p6mj8.sandbox2651.opentlc.com
+|SSH password|YhTVpCoq1P8j
+|Service Management URL|https://demo.redhat.com/services/user-wkulhane-redhat-com/sandboxes-gpte.ocp4-acm-hypershift.prod
+|===
 
 Make note of the following information:
 
 * The SSH command to connect to you environment's bastion's VM
 * The password to be used with user `lab-user` on the bastion VM
 * Also the OpenShift console URL along with the credentials for the `admin` user.
-
-There is plenty more information below what is illustrated above. But all of those properties have already been set up in your environment.
 
 == Next steps
 
