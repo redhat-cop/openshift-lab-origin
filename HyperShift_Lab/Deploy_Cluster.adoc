@@ -10,160 +10,274 @@ Right now the only way to deploy a new cluster is by using the `hypershift` CLI 
 
 . Log into your bastion VM if you are not already logged in - the instructions are in the introduction document.
 
-. Create a new YAML file `production.yaml` that will deploy your "production" cluster. It will be similar to the development cluster except that it will be deployed in 2 Zones rather than just one.
+. Any new cluster will be deployed using the `hypershift` command line tool. This tool is available from the hub cluster. To show the download location for the command line tool use the following command:
 +
 [source,sh]
 ----
----
-apiVersion: cluster.open-cluster-management.io/v1alpha1
-kind: HypershiftDeployment
-metadata:
-  name: production <1>
-  namespace: hypershift
-spec:
-  hostingCluster: local-cluster
-  hostingNamespace: clusters
-  hostedClusterSpec:
-    networking:
-      machineCIDR: 10.0.0.0/16 <2>
-      networkType: OVNKubernetes <3>
-      podCIDR: 10.132.0.0/14 <2>
-      serviceCIDR: 172.31.0.0/16 <2>
-    platform:
-      type: AWS
-    pullSecret:
-      name: production-pull-secret <4>
-    release:
-      image: quay.io/openshift-release-dev/ocp-release:4.11.8-x86_64 <5>
-    services:
-    - service: APIServer
-      servicePublishingStrategy:
-        type: LoadBalancer
-    - service: OAuthServer
-      servicePublishingStrategy:
-        type: Route
-    - service: Konnectivity
-      servicePublishingStrategy:
-        type: Route
-    - service: Ignition
-      servicePublishingStrategy:
-        type: Route
-    sshKey: {}
-  nodePools:
-  - name: production-us-west-2b <6>
-    spec:
-      clusterName: production
-      management:
-        autoRepair: false
-        replace:
-          rollingUpdate:
-            maxSurge: 1
-            maxUnavailable: 0
-          strategy: RollingUpdate
-        upgradeType: Replace
-      platform:
-        aws:
-          instanceType: m5.large <7>
-        type: AWS
-      release:
-        image: quay.io/openshift-release-dev/ocp-release:4.11.8-x86_64
-      replicas: 1
-  - name: production-us-west-2c
-    spec:
-      clusterName: production
-      management:
-        autoRepair: false
-        replace:
-          rollingUpdate:
-            maxSurge: 1
-            maxUnavailable: 0
-          strategy: RollingUpdate
-        upgradeType: Replace
-      platform:
-        aws:
-          instanceType: m5.large
-        type: AWS
-      release:
-        image: quay.io/openshift-release-dev/ocp-release:4.11.8-x86_64
-      replicas: 1
-  infrastructure:
-    cloudProvider:
-      name: aws-credentials <8>
-    configure: True
-    platform:
-      aws:
-        region: us-west-2 <9>
-        zones: <10>
-        - us-west-2b
-        - us-west-2c
+oc get consoleclidownload hypershift-cli-download -o json | jq -r '.spec.links[] | select(.text=="Download hypershift CLI for Linux for x86_64").href'
 ----
 +
-[NOTE]
-====
-<1> Name of the cluster. Referenced a few more times in this resources
-<2> Default networking configuration
-<3> Networking Plugin to use: `OVNKubernetes` or `OpenShiftSDN`
-<4> Name of a secret to store a pull secret. Will be created automatically
-<5> OpenShift release image to use
-<6> An Array of (worker) node pools. In this example you are distributing your two workers nodes over two different availability zones, us-west-2b and us-west-2c. It is a good idea to use descriptive names for the worker node pools.
-<7> Instance type to use for worker nodes (control plane will run as pods on the host cluster)
-<8> AWS Credentials and other information that is necessary for deployment (base domain, SSH keys, OpenShift pull secret). The name of the secret - and the secret has to exist in the hub cluster's (`local-cluster` in our case) namespace.
-<9> The AWS Region to be deploy the cluster (worker nodes) into.
-<10> Optional: which zones to use for the deployment
-====
+.Sample Output
+[source,texinfo]
+----
+https://hypershift-cli-download-multicluster-engine.apps.cluster-p6mj8.sandbox2651.opentlc.com/linux/amd64/hypershift.tar.gz
+----
 
-. If you copied the above YAML manifest make sure you didn't copy any of the annotations.
-. Create the *production* cluster:
+. On your environment the `hypershift` command line tool has already been installed. Run it to show available options:
 +
 [source,sh]
 ----
-oc apply -f production.yaml
+hypershift
+----
++
+.Sample Output
+[source,texinfo]
+----
+Usage:
+  hypershift [flags]
+  hypershift [command]
+
+Available Commands:
+  completion   Generate the autocompletion script for the specified shell
+  console-logs Get machine instance console logs
+  create       Commands for creating HyperShift resources
+  destroy      Commands for destroying HyperShift resources
+  dump         Commands for dumping resources for debugging
+  help         Help about any command
+  install      Installs the HyperShift operator
+  version      Prints HyperShift CLI version
+
+Flags:
+  -h, --help      help for hypershift
+  -v, --version   version for hypershift
+
+Use "hypershift [command] --help" for more information about a command.
+----
+
+. Run it again to show the help for `hypershift create cluster aws` - the command that you will use to deploy a "production" cluster into AWS:
++
+[source,sh]
+----
+hypershift create cluster aws --help
+----
++
+There are a lot of options available. In your environment all credentials have already been provided in a secret `aws-credentials` in the `local-cluster` namespace.
+
+. Create a new cluster with name *production*:
++
+[source,sh]
+----
+hypershift create cluster aws \
+  --name production \
+  --infra-id prod-${GUID} \
+  --region us-west-1 \
+  --zones us-west-1b,us-west-1c \
+  --instance-type m6a.large \
+  --root-volume-type gp3 \
+  --root-volume-size 100 \
+  --etcd-storage-class gp3-csi \
+  --control-plane-availability-policy SingleReplica \
+  --infra-availability-policy SingleReplica \
+  --network-type OVNKubernetes \
+  --release-image quay.io/openshift-release-dev/ocp-release:4.12.9-x86_64 \
+  --node-pool-replicas 1 \
+  --namespace local-cluster \
+  --secret-creds aws-credentials \
+  --auto-repair \
+  --generate-ssh
+----
++
+Here is what all these parameters mean:
++
+[cols=2,option=header]
+|====
+|Parameter|Meaning
+|name|(Display) Name of the cluster
+|infra-id|A unique ID for your cluster
+|region|Which AWS region to deploy this cluster into
+|zones|Which zones to use in the selected region. For each zone one NodePool will be created.
+|instance-type|The EC2 instance for your worker nodes
+|root-volume-type|The EC2 storage to be used for worker nodes
+|root-volume-size|Size of the attached storage for worker nodes in GB
+|etcd-storage-class|The OpenShift storage class to use on the hub cluster for ETCD storage.
+|control-plane-availability-policy|SingleReplica or HighlyAvailable. HighlyAvailable creates three instances of each critical service (e.g. API Servers or ETCD). The hub cluster must have at least three worker nodes in three availability zones to allow separation of these pods from each other (otherwise pod anti affinity rules will prevent the pods from starting up).
+|infra-availability-policy|Same as above
+|network-type|OpenShift SDN plugin to use. OVNKubernetes is the default.
+|release-image|Which OpenShift version to deploy.
+|node-pool-replicas|How many worker nodes to set up in each NodePool.
+|namespace|The namespace to set up the HostedCluster resource in
+|secret-creds|The name of the secret holding the baseDomain, AWS credentials and OpenShift pull secret for the cluster. It would also be possible to pass each of those values as extra parameters.
+|auto-repair|Set up auto-repair for the worker nodes
+|generate-ssh|Generate new SSH keys for the worker nodes instead of using existing ones.
+|====
++
+The output of the command should look similar to this example:
++
+[source,texinfo,options=nowrap]
+----
+2023-03-30T17:21:56Z    INFO    Retreiving credentials secret   {"namespace": "local-cluster", "name": "aws-credentials"}
+Using baseDomain from the secret-creds baseDomain p6mj8.sandbox2651.opentlc.com
+2023-03-30T17:22:01Z    INFO    Creating infrastructure {"id": "prod-p6mj8"}
+2023-03-30T17:22:01Z    INFO    Found existing VPC      {"id": "vpc-0633198053299e3f0"}
+2023-03-30T17:22:01Z    INFO    Enabled DNS support on VPC      {"id": "vpc-0633198053299e3f0"}
+2023-03-30T17:22:01Z    INFO    Enabled DNS hostnames on VPC    {"id": "vpc-0633198053299e3f0"}
+2023-03-30T17:22:01Z    INFO    Found existing DHCP options     {"id": "dopt-01210482b6c7ffe48"}
+2023-03-30T17:22:01Z    INFO    Associated DHCP options with VPC        {"vpc": "vpc-0633198053299e3f0", "dhcp options": "dopt-01210482b6c7ffe48"}
+2023-03-30T17:22:02Z    INFO    Found existing internet gateway {"id": "igw-093d29dcecf570842"}
+2023-03-30T17:22:02Z    INFO    Found existing security group   {"name": "prod-p6mj8-worker-sg", "id": "sg-0d7df54294b5e7684"}
+2023-03-30T17:22:02Z    INFO    Created subnet  {"name": "prod-p6mj8-private-us-west-1b", "id": "subnet-0a40bc94583a10736"}
+2023-03-30T17:22:03Z    INFO    Created subnet  {"name": "prod-p6mj8-public-us-west-1b", "id": "subnet-005bee83e73d9a112"}
+2023-03-30T17:22:03Z    INFO    Created elastic IP for NAT gateway      {"id": "eipalloc-0e4793de5160beaaa"}
+2023-03-30T17:22:03Z    INFO    Created NAT gateway     {"id": "nat-02d8a702810534da1"}
+2023-03-30T17:22:04Z    INFO    Created route table     {"name": "prod-p6mj8-private-us-west-1b", "id": "rtb-0b1744d3f12b647d3"}
+2023-03-30T17:22:18Z    INFO    Created route to NAT gateway    {"route table": "rtb-0b1744d3f12b647d3", "nat gateway": "nat-02d8a702810534da1"}
+2023-03-30T17:22:18Z    INFO    Associated subnet with route table      {"route table": "rtb-0b1744d3f12b647d3", "subnet": "subnet-0a40bc94583a10736"}
+2023-03-30T17:22:19Z    INFO    Created subnet  {"name": "prod-p6mj8-private-us-west-1c", "id": "subnet-0db88eccad6771084"}
+2023-03-30T17:22:19Z    INFO    Created subnet  {"name": "prod-p6mj8-public-us-west-1c", "id": "subnet-0e90ff333c4d9abec"}
+2023-03-30T17:22:19Z    INFO    Created elastic IP for NAT gateway      {"id": "eipalloc-05300dfb1066bc5ff"}
+2023-03-30T17:22:20Z    INFO    Created NAT gateway     {"id": "nat-0ccc7152cb9679fc0"}
+2023-03-30T17:22:20Z    INFO    Created route table     {"name": "prod-p6mj8-private-us-west-1c", "id": "rtb-080ece6f7cd99366f"}
+2023-03-30T17:22:24Z    INFO    Created route to NAT gateway    {"route table": "rtb-080ece6f7cd99366f", "nat gateway": "nat-0ccc7152cb9679fc0"}
+2023-03-30T17:22:24Z    INFO    Associated subnet with route table      {"route table": "rtb-080ece6f7cd99366f", "subnet": "subnet-0db88eccad6771084"}
+2023-03-30T17:22:24Z    INFO    Created route table     {"name": "prod-p6mj8-public", "id": "rtb-08b757f906e3b0114"}
+2023-03-30T17:22:25Z    INFO    Set main VPC route table        {"route table": "rtb-08b757f906e3b0114", "vpc": "vpc-0633198053299e3f0"}
+2023-03-30T17:22:25Z    INFO    Created route to internet gateway       {"route table": "rtb-08b757f906e3b0114", "internet gateway": "igw-093d29dcecf570842"}
+2023-03-30T17:22:25Z    INFO    Associated route table with subnet      {"route table": "rtb-08b757f906e3b0114", "subnet": "subnet-005bee83e73d9a112"}
+2023-03-30T17:22:25Z    INFO    Associated route table with subnet      {"route table": "rtb-08b757f906e3b0114", "subnet": "subnet-0e90ff333c4d9abec"}
+2023-03-30T17:22:26Z    INFO    Created s3 VPC endpoint {"id": "vpce-09b9ebd5cf94f4e69"}
+2023-03-30T17:22:26Z    INFO    Found existing public zone      {"name": "p6mj8.sandbox2651.opentlc.com", "id": "Z00045013VC4PAOW2O6CC"}
+2023-03-30T17:22:27Z    INFO    Created private zone    {"name": "production.p6mj8.sandbox2651.opentlc.com", "id": "Z05931812G5C6C27KY5T2"}
+2023-03-30T17:22:28Z    INFO    Created private zone    {"name": "production.hypershift.local", "id": "Z07988821ZFKPESDLOD09"}
+2023-03-30T17:22:28Z    INFO    Detected Issuer URL     {"issuer": "https://oidc-storage-p6mj8.s3.us-east-2.amazonaws.com/prod-p6mj8"}
+2023-03-30T17:22:28Z    INFO    Created OIDC provider   {"provider": "arn:aws:iam::588618638711:oidc-provider/oidc-storage-p6mj8.s3.us-east-2.amazonaws.com/prod-p6mj8"}
+2023-03-30T17:22:28Z    INFO    Created role    {"name": "prod-p6mj8-openshift-ingress"}
+2023-03-30T17:22:29Z    INFO    Created role policy     {"name": "prod-p6mj8-openshift-ingress"}
+2023-03-30T17:22:29Z    INFO    Created role    {"name": "prod-p6mj8-openshift-image-registry"}
+2023-03-30T17:22:29Z    INFO    Created role policy     {"name": "prod-p6mj8-openshift-image-registry"}
+2023-03-30T17:22:29Z    INFO    Created role    {"name": "prod-p6mj8-aws-ebs-csi-driver-controller"}
+2023-03-30T17:22:29Z    INFO    Created role policy     {"name": "prod-p6mj8-aws-ebs-csi-driver-controller"}
+2023-03-30T17:22:29Z    INFO    Created role    {"name": "prod-p6mj8-cloud-controller"}
+2023-03-30T17:22:29Z    INFO    Created role policy     {"name": "prod-p6mj8-cloud-controller"}
+2023-03-30T17:22:29Z    INFO    Created role    {"name": "prod-p6mj8-node-pool"}
+2023-03-30T17:22:29Z    INFO    Created role policy     {"name": "prod-p6mj8-node-pool"}
+2023-03-30T17:22:29Z    INFO    Created role    {"name": "prod-p6mj8-control-plane-operator"}
+2023-03-30T17:22:29Z    INFO    Created role policy     {"name": "prod-p6mj8-control-plane-operator"}
+2023-03-30T17:22:30Z    INFO    Created role    {"name": "prod-p6mj8-cloud-network-config-controller"}
+2023-03-30T17:22:30Z    INFO    Created role policy     {"name": "prod-p6mj8-cloud-network-config-controller"}
+2023-03-30T17:22:30Z    INFO    Created role    {"name": "prod-p6mj8-worker-role"}
+2023-03-30T17:22:30Z    INFO    Created instance profile        {"name": "prod-p6mj8-worker"}
+2023-03-30T17:22:30Z    INFO    Added role to instance profile  {"role": "prod-p6mj8-worker-role", "profile": "prod-p6mj8-worker"}
+2023-03-30T17:22:30Z    INFO    Created role policy     {"name": "prod-p6mj8-worker-policy"}
+2023-03-30T17:22:30Z    INFO    Created IAM profile     {"name": "prod-p6mj8-worker", "region": "us-west-1"}
+2023-03-30T17:22:30Z    INFO    Applied Kube resource   {"kind": "Namespace", "namespace": "", "name": "local-cluster"}
+2023-03-30T17:22:30Z    INFO    Applied Kube resource   {"kind": "Secret", "namespace": "local-cluster", "name": "production-pull-secret"}
+2023-03-30T17:22:30Z    INFO    Applied Kube resource   {"kind": "", "namespace": "local-cluster", "name": "production"}
+2023-03-30T17:22:30Z    INFO    Applied Kube resource   {"kind": "Secret", "namespace": "local-cluster", "name": "production-etcd-encryption-key"}
+2023-03-30T17:22:30Z    INFO    Applied Kube resource   {"kind": "Secret", "namespace": "local-cluster", "name": "production-ssh-key"}
+2023-03-30T17:22:30Z    INFO    Applied Kube resource   {"kind": "NodePool", "namespace": "local-cluster", "name": "production-us-west-1b"}
+2023-03-30T17:22:30Z    INFO    Applied Kube resource   {"kind": "NodePool", "namespace": "local-cluster", "name": "production-us-west-1c"}
 ----
 
 . Check that the cluster was created successfully:
 +
 [source,sh]
 ----
-oc get hd -n hypershift
+oc get hostedcluster -n local-cluster
 ----
 +
 .Sample Output
 [source,texinfo,options=nowrap]
 ----
-NAME          TYPE   INFRA                  IAM                    MANIFESTWORK           PROVIDER REF   PROGRESS    AVAILABLE
-development   AWS    ConfiguredAsExpected   ConfiguredAsExpected   ConfiguredAsExpected   AsExpected     Completed   True
-production    AWS    BeingConfigured                                                      AsExpected
+NAME          VERSION   KUBECONFIG                     PROGRESS    AVAILABLE   PROGRESSING   MESSAGE
+development   4.12.9    development-admin-kubeconfig   Completed   True        False         The hosted control plane is available
+production              production-admin-kubeconfig    Partial     False       False         Waiting for hosted control plane to be healthy
 ----
 
-. Repeat the command until you see the following output:
+. Repeat the command until you see the following output (then press `Ctrl-C` to stop watching the hosted cluster):
 +
 [source,sh]
 ----
-oc get hd -n hypershift
+watch -n 10 oc get hostedcluster -n local-cluster
 ----
 +
 .Sample Output
 [source,texinfo,options=nowrap]
 ----
-NAME          TYPE   INFRA                  IAM                    MANIFESTWORK           PROVIDER REF   PROGRESS    AVAILABLE
-development   AWS    ConfiguredAsExpected   ConfiguredAsExpected   ConfiguredAsExpected   AsExpected     Completed   True
-production    AWS    ConfiguredAsExpected   ConfiguredAsExpected   ConfiguredAsExpected   AsExpected     Partial     False
+Every 10.0s: oc get hostedcluster -n local-cluster                                                                                                         bastion.p6mj8.internal: Thu Mar 30 18:34:06 2023
+
+NAME          VERSION   KUBECONFIG                     PROGRESS    AVAILABLE   PROGRESSING   MESSAGE
+development   4.12.9    development-admin-kubeconfig   Completed   True        False         The hosted control plane is available
+production              production-admin-kubeconfig    Partial     True        False         The hosted control plane is available
 ----
 +
 That means that your control plane has been configured and the cluster is now deploying the node pools.
+
+. Check the pods that make up your new cluster's control plane (repeat until all pods are `Running`). This will take a few minutes:
++
+[source,sh]
+----
+oc get pod -n local-cluster-production
+----
++
+.Sample Output
+[source,texinfo]
+----
+NAME                                                 READY   STATUS    RESTARTS   AGE
+aws-ebs-csi-driver-controller-789579c96f-82lvm       7/7     Running   0          77s
+aws-ebs-csi-driver-operator-85f48c697b-wxl5j         1/1     Running   0          82s
+capi-provider-5fd44bf544-68nxp                       2/2     Running   0          3m42s
+catalog-operator-857b64f45c-pgl9t                    2/2     Running   0          2m12s
+certified-operators-catalog-6cd455b568-ffsd4         1/1     Running   0          2m11s
+cloud-network-config-controller-b55958d49-2r7st      3/3     Running   0          76s
+cluster-api-548887478d-d8ffd                         1/1     Running   0          3m42s
+cluster-autoscaler-5d89c896c5-bjhkm                  1/1     Running   0          3m23s
+cluster-image-registry-operator-54cb4869f8-4g66s     3/3     Running   0          2m12s
+cluster-network-operator-7f8b997549-wjr5h            1/1     Running   0          2m13s
+cluster-node-tuning-operator-76b5b7c74d-zltq4        1/1     Running   0          2m13s
+cluster-policy-controller-7fbbb5567f-n6dpb           1/1     Running   0          2m14s
+cluster-storage-operator-5bd6cb4785-v5wr2            1/1     Running   0          2m12s
+cluster-version-operator-54758cbddd-k2xd2            1/1     Running   0          2m14s
+community-operators-catalog-555bb78db7-b5fcv         1/1     Running   0          2m11s
+control-plane-operator-f7f96d59c-5lzqr               2/2     Running   0          3m42s
+csi-snapshot-controller-775b8c9fbf-t9tgn             1/1     Running   0          83s
+csi-snapshot-controller-operator-5c54b697d8-2wd8k    1/1     Running   0          2m11s
+csi-snapshot-webhook-55d6cdbf57-mj79b                1/1     Running   0          83s
+dns-operator-7c56464b75-j8kjs                        1/1     Running   0          2m13s
+etcd-0                                               2/2     Running   0          3m24s
+hosted-cluster-config-operator-fdbb57d4b-2njfc       1/1     Running   0          2m13s
+ignition-server-dcb5f6df-5c4j7                       1/1     Running   0          3m23s
+ingress-operator-7d44b68bf7-gtc9f                    3/3     Running   0          2m13s
+konnectivity-agent-6f498c79f6-n2bpm                  1/1     Running   0          3m24s
+konnectivity-server-6bb87b8cb8-zdckp                 1/1     Running   0          3m24s
+kube-apiserver-6ccb4f6b8d-8kwth                      5/5     Running   0          3m24s
+kube-controller-manager-6cfb7dd5bc-k8dzt             2/2     Running   0          90s
+kube-scheduler-6c69fd4645-pmvcb                      1/1     Running   0          2m23s
+machine-approver-85d9b947cf-8cmnq                    1/1     Running   0          3m23s
+multus-admission-controller-58958d9565-c89wq         2/2     Running   0          70s
+oauth-openshift-86786b4564-4dxc4                     2/2     Running   0          87s
+olm-operator-5647f5754b-589k5                        2/2     Running   0          2m12s
+openshift-apiserver-f89f74dfc-8476z                  2/2     Running   0          90s
+openshift-controller-manager-7d7495994d-zpfqs        1/1     Running   0          2m14s
+openshift-oauth-apiserver-54bdc55b76-tjcch           1/1     Running   0          2m14s
+openshift-route-controller-manager-766b6986c-bw7jf   1/1     Running   0          2m14s
+ovnkube-master-0                                     5/7     Running   0          54s
+packageserver-6cb7776686-cwt4p                       2/2     Running   0          2m12s
+redhat-marketplace-catalog-6c84fc668b-klmd8          1/1     Running   0          2m11s
+redhat-operators-catalog-86b9566df8-jqrb5            1/1     Running   0          2m11s
+----
 
 . Retrieve the kubeadmin password to access your new cluster and save it to a file in the `$HOME/.kube` directory:
 +
 [source,sh]
 ----
-oc get secret production-kubeadmin-password -n local-cluster --template='{{ .data.password }}' | base64 -d >$HOME/.kube/production.kubeadmin-password
+oc get secret $(oc get hc production -n local-cluster -o json | jq -r .status.kubeadminPassword.name) -n local-cluster --template='{{ .data.password }}' | base64 -d >$HOME/.kube/production.kubeadmin-password
 ----
 
-. Retrieve the kukbeconfig file to access your new cluster and save it to a file in the `$HOME/.kube` directory:
+. Retrieve the kubeconfig file to access your new cluster and save it to a file in the `$HOME/.kube` directory:
 +
 [source,sh]
 ----
-oc get secret production-admin-kubeconfig -n local-cluster --template='{{ .data.kubeconfig }}' | base64 -d >$HOME/.kube/production-kubeconfig
+oc get secret $(oc get hc production -n local-cluster -o json | jq -r .status.kubeconfig.name) -n local-cluster --template='{{ .data.kubeconfig }}' | base64 -d >$HOME/.kube/production-kubeconfig
 ----
 
 . Set your `KUBECONFIG` variable to use the production cluster configuration:
@@ -184,31 +298,31 @@ oc get co
 [source,texinfo,options=nowrap]
 ----
 NAME                                       VERSION   AVAILABLE   PROGRESSING   DEGRADED   SINCE   MESSAGE
-console
-csi-snapshot-controller
-dns
-image-registry
-ingress                                              False       True          True       83s     The "default" ingress controller reports Available=False: IngressControllerUnavailable: One or more status conditions indicate unavailable: DeploymentAvailable=False (DeploymentUnavailable: The deployment has Available status condition set to False (reason: MinimumReplicasUnavailable) with message: Deployment does not have minimum availability.)
-insights
-kube-apiserver                             4.11.8    True        False         False      2m16s
-kube-controller-manager                    4.11.8    True        False         False      2m16s
-kube-scheduler                             4.11.8    True        False         False      2m16s
-kube-storage-version-migrator
-monitoring
-network                                    4.11.8    True        True          False      104s    DaemonSet "/openshift-multus/multus" is not yet scheduled on any nodes...
-openshift-apiserver                        4.11.8    True        False         False      2m16s
-openshift-controller-manager               4.11.8    True        False         False      2m16s
-openshift-samples
-operator-lifecycle-manager                 4.11.8    True        False         False      2m3s
-operator-lifecycle-manager-catalog         4.11.8    True        True          False      2m3s    Deployed 0.19.0
-operator-lifecycle-manager-packageserver   4.11.8    True        False         False      2m16s
-service-ca
-storage
+console                                                                                           
+csi-snapshot-controller                                                                           
+dns                                                                                               
+image-registry                                                                                    
+ingress                                              False       True          True       20m     The "default" ingress controller reports Available=False: IngressControllerUnavailable: One or more status conditions indicate unavailable: DeploymentAvailable=False (DeploymentUnavailable: The deployment has Available status condition set to False (reason: MinimumReplicasUnavailable) with message: Deployment does not have minimum availability.)
+insights                                                                                          
+kube-apiserver                             4.11.34   True        False         False      21m     
+kube-controller-manager                    4.11.34   True        False         False      21m     
+kube-scheduler                             4.11.34   True        False         False      21m     
+kube-storage-version-migrator                                                                     
+monitoring                                                                                        
+network                                    4.11.34   True        True          True       20m     DaemonSet "/openshift-ovn-kubernetes/ovnkube-node" rollout is not making progress - last change 2023-03-30T18:36:50Z...
+openshift-apiserver                        4.11.34   True        False         False      21m     
+openshift-controller-manager               4.11.34   True        False         False      21m     
+openshift-samples                                                                                 
+operator-lifecycle-manager                 4.11.34   True        False         False      21m     
+operator-lifecycle-manager-catalog         4.11.34   True        False         False      21m     
+operator-lifecycle-manager-packageserver   4.11.34   True        False         False      21m     
+service-ca                                                                                        
+storage                                                                                           
 ----
 +
 Depending on how long you waited since you deployed the cluster you may see that some cluster operators are not yet available.
 
-. Check your node pools:
+. Check your nodes:
 +
 [source,sh]
 ----
@@ -225,16 +339,16 @@ No resources found
 [source,texinfo,options=nowrap]
 ----
 NAME                                         STATUS     ROLES    AGE   VERSION
-ip-10-0-137-169.us-west-2.compute.internal   NotReady   worker   11s   v1.24.0+dc5a2fd
-ip-10-0-154-205.us-west-2.compute.internal   NotReady   worker   12s   v1.24.0+dc5a2fd
+ip-10-0-129-140.us-west-1.compute.internal   NotReady   worker   11s   v1.25.7+eab9cc9
+ip-10-0-156-208.us-west-1.compute.internal   NotReady   worker   12s   v1.25.7+eab9cc9
 ----
 +
 .Sample Output (Nodes available))
 [source,texinfo,options=nowrap]
 ----
 NAME                                         STATUS   ROLES    AGE   VERSION
-ip-10-0-137-169.us-west-2.compute.internal   Ready    worker   75s   v1.24.0+dc5a2fd
-ip-10-0-154-205.us-west-2.compute.internal   Ready    worker   76s   v1.24.0+dc5a2fd
+ip-10-0-129-140.us-west-1.compute.internal   Ready    worker   17m   v1.25.7+eab9cc9
+ip-10-0-156-208.us-west-1.compute.internal   Ready    worker   17m   v1.25.7+eab9cc9
 ----
 +
 Again depending on how long it has been since you created the cluster you may see no nodes, NotReady nodes or you may already see the completely deployed nodes.
@@ -250,26 +364,27 @@ oc get co
 [source,texinfo,options=nowrap]
 ----
 NAME                                       VERSION   AVAILABLE   PROGRESSING   DEGRADED   SINCE   MESSAGE
-console                                    4.11.8    True        False         False      2m21s
-csi-snapshot-controller                    4.11.8    True        False         False      3m33s
-dns                                        4.11.8    True        False         False      2m28s
-image-registry                             4.11.8    True        False         False      2m2s
-ingress                                    4.11.8    True        False         False      2m24s
-insights                                   4.11.8    True        False         False      4m13s
-kube-apiserver                             4.11.8    True        False         False      8m57s
-kube-controller-manager                    4.11.8    True        False         False      8m57s
-kube-scheduler                             4.11.8    True        False         False      8m57s
-kube-storage-version-migrator              4.11.8    True        False         False      3m41s
-monitoring                                 4.11.8    True        False         False      46s
-network                                    4.11.8    True        False         False      8m25s
-openshift-apiserver                        4.11.8    True        False         False      8m57s
-openshift-controller-manager               4.11.8    True        False         False      8m57s
-openshift-samples                          4.11.8    True        False         False      2m4s
-operator-lifecycle-manager                 4.11.8    True        False         False      8m44s
-operator-lifecycle-manager-catalog         4.11.8    True        False         False      8m44s
-operator-lifecycle-manager-packageserver   4.11.8    True        False         False      8m57s
-service-ca                                 4.11.8    True        False         False      4m13s
-storage                                    4.11.8    True        False         False      7s
+console                                    4.12.9    True        False         False      20s     
+csi-snapshot-controller                    4.12.9    True        False         False      6m57s   
+dns                                        4.12.9    True        False         False      2m35s   
+image-registry                             4.12.9    True        False         False      2m26s   
+ingress                                    4.12.9    True        False         False      119s    
+insights                                   4.12.9    True        False         False      3m20s   
+kube-apiserver                             4.12.9    True        False         False      7m7s    
+kube-controller-manager                    4.12.9    True        False         False      7m7s    
+kube-scheduler                             4.12.9    True        False         False      7m7s    
+kube-storage-version-migrator              4.12.9    True        False         False      2m47s   
+monitoring                                 4.12.9    True        False         False      58s     
+network                                    4.12.9    True        False         False      6m52s   
+node-tuning                                4.12.9    True        False         False      3m51s   
+openshift-apiserver                        4.12.9    True        False         False      7m7s    
+openshift-controller-manager               4.12.9    True        False         False      7m7s    
+openshift-samples                          4.12.9    True        False         False      2m4s    
+operator-lifecycle-manager                 4.12.9    True        False         False      6m36s   
+operator-lifecycle-manager-catalog         4.12.9    True        False         False      6m55s   
+operator-lifecycle-manager-packageserver   4.12.9    True        False         False      7m6s    
+service-ca                                 4.12.9    True        False         False      3m17s   
+storage                                    4.12.9    True        False         False      3m43s   
 ----
 
 . Retrieve the OpenShift console URL:
@@ -295,10 +410,445 @@ https://console-openshift-console.apps.production.kvrsc.sandbox766.opentlc.com
 unset KUBECONFIG
 ----
 
+== Import cluster to RHACM
+
+In order to manage the cluster using Red Hat Advanced Cluster Management for Kubernetes you need to import it into RHACM. The easiest way to do that is to create a `ManagedCluster` resource that contains information about your cluster - like the labels that you would like to set.
+
+. Create the ManagedCluster resource:
++
+[source,sh]
+----
+cat << EOF | oc apply -f -
+---
+apiVersion: cluster.open-cluster-management.io/v1
+kind: ManagedCluster
+metadata:
+  name: production
+  annotations:
+    import.open-cluster-management.io/hosting-cluster-name: local-cluster
+    import.open-cluster-management.io/klusterlet-deploy-mode: Hosted
+  labels:
+    name: production
+    cloud: auto-detect
+    cluster.open-cluster-management.io/clusterset: default
+    vendor: OpenShift
+    guid: ${GUID}
+    rhdp_type: sandbox
+    rhdp_purpose: production
+spec:
+  hubAcceptsClient: true
+  leaseDurationSeconds: 60
+EOF
+----
+
+. Validate that your managed cluster has been created:
++
+[source,sh]
+----
+oc get managedcluster
+----
++
+.Sample Output
+[source,texinfo]
+----
+NAME            HUB ACCEPTED   MANAGED CLUSTER URLS                                                                         JOINED   AVAILABLE   AGE
+development     true           https://a3ec8aa1e521d4fbd8fb24881828fe82-13e768b6e6dd55bc.elb.us-east-2.amazonaws.com:6443   True     True        5h17m
+local-cluster   true           https://api.cluster-p6mj8.sandbox2651.opentlc.com:6443                                       True     True        5h21m
+production      true           https://a355c9fa1f51143bca15661ccb23c008-cf0807c5e2b039b6.elb.us-east-2.amazonaws.com:6443   True     True        4m47s
+----
+
+. Once your cluster has been imported you can get more information about the managed cluster by examining the resource:
++
+[source,sh]
+----
+oc get managedcluster production -o yaml
+----
++
+Just like with the development cluster the managed cluster object shows total and available capacity of the cluster as well as other properties like the console URL under the `status.clusterClaims` section.
+
+. Log into your hub cluster console and validate that your new production cluster is also available in the Infrastructure / Clusters overview page.
+
+== Enabling KlusterletAddonConfig for the managed cluster
+
+In order to deploy applications to the new managed cluster you need to create a `KlusterletAddonConfig` for the managed cluster telling ACM to deploy the management pieces to the new cluster.
+
+. Create the KlusterletAddonConfig:
++
+[source,sh]
+----
+cat << EOF | oc apply -f -
+apiVersion: agent.open-cluster-management.io/v1
+kind: KlusterletAddonConfig
+metadata:
+  name: production
+  namespace: production
+spec:
+  clusterName: production
+  clusterNamespace: production
+  clusterLabels:
+    cloud: auto-detect
+    vendor: auto-detect
+  applicationManager:
+    enabled: true
+  certPolicyController:
+    enabled: true
+  iamPolicyController:
+    enabled: true
+  policyController:
+    enabled: true
+  searchCollector:
+    enabled: false
+EOF
+----
+
+== Deleting a cluster with hosted control planes
+
+Deleting a cluster with hosted control planes is a two step process. First delete the ManagedCluster resource, then run `hypershift destroy` to delete the HostedCluster resource and AWS cloud infrastructure.
+
+. Delete the ManagedCluster. Note that this command is blocking for a while because of the finalizer in the ManagedCluster resource.
++
+[source,sh]
+----
+oc delete managedcluster production
+----
++
+[NOTE]
+====
+You could also *Detach* the cluster from the clusters view of the web console by clicking the three dot menu on the far right of the cluster and selecting *Detach Cluster*. That also deletes the ManagedCluster resource.
+
+If you deleted via the command line you can see that the status of the cluster in the console changed to *Pending Import*.
+====
+
+. You can not delete a cluster from the console so you need to delete it from the command line. The best way to do that is via the `hypershift` command line utility because that also cleans up the AWS resources (subnets, VPCs, EIPs) that got created when the cluster got deployed.
++
+[source,sh]
+----
+hypershift destroy cluster aws \
+  --name production \
+  --infra-id production-${GUID} \
+  --region us-west-2 \
+  --secret-creds aws-credentials \
+  --namespace local-cluster 
+----
++
+.Sample Output
+[source,texinfo]
+----
+2023-03-30T21:03:14Z    INFO    Retreiving credentials secret   {"namespace": "local-cluster", "name": "aws-credentials"}
+2023-03-30T21:03:14Z    INFO    Found hosted cluster    {"namespace": "local-cluster", "name": "production"}
+2023-03-30T21:03:15Z    INFO    Updated finalizer for hosted cluster    {"namespace": "local-cluster", "name": "production"}
+2023-03-30T21:03:15Z    INFO    Deleting hosted cluster {"namespace": "local-cluster", "name": "production"}
+Using baseDomain from the secret-creds baseDomain p6mj8.sandbox2651.opentlc.com
+2023-03-30T21:07:12Z    INFO    Destroying infrastructure       {"infraID": "prod-p6mj8"}
+2023-03-30T21:07:13Z    INFO    Deleted wildcard record from public hosted zone {"id": "Z00045013VC4PAOW2O6CC", "name": "*.apps.production.p6mj8.sandbox2651.opentlc.com"}
+2023-03-30T21:07:14Z    INFO    Deleted S3 Bucket       {"name": "prod-p6mj8-image-registry-us-west-1-uwcdkvgcokhadufnebrwqmuheg"}
+2023-03-30T21:07:15Z    INFO    Deleted ELB     {"name": "af2b0bd970c6e4af0aad3ff9060543d8"}
+2023-03-30T21:07:16Z    INFO    Deleted VPC endpoints   {"IDs": "vpce-0fedbad1bffa1d721"}
+2023-03-30T21:07:17Z    INFO    Deleted records from private hosted zone        {"id": "Z06774713IPSD2INVR46F", "names": ["\\052.apps.production.p6mj8.sandbox2651.opentlc.com."]}
+2023-03-30T21:07:17Z    INFO    Deleted private hosted zone     {"id": "Z06774713IPSD2INVR46F", "name": "production.p6mj8.sandbox2651.opentlc.com."}
+2023-03-30T21:07:17Z    INFO    Deleted private hosted zone     {"id": "Z06769036A1VHULXAH09", "name": "production.hypershift.local."}
+2023-03-30T21:07:17Z    INFO    Deleted route from route table  {"table": "rtb-0a9c51dc5ef196ab0", "destination": "0.0.0.0/0"}
+
+[... output omitted ...]
+
+2023-03-30T21:08:18Z    INFO    Removed role from instance profile      {"profile": "prod-p6mj8-worker", "role": "prod-p6mj8-worker-role"}
+2023-03-30T21:08:18Z    INFO    Deleted instance profile        {"profile": "prod-p6mj8-worker"}
+2023-03-30T21:08:18Z    INFO    Deleted role policy     {"role": "prod-p6mj8-worker-role", "policy": "prod-p6mj8-worker-policy"}
+2023-03-30T21:08:18Z    INFO    Deleted role    {"role": "prod-p6mj8-worker-role"}
+2023-03-30T21:08:18Z    INFO    Deleting Secrets        {"namespace": "local-cluster"}
+2023-03-30T21:08:18Z    INFO    Deleted CLI generated secrets
+2023-03-30T21:08:18Z    INFO    Finalized hosted cluster        {"namespace": "local-cluster", "name": "production"}
+2023-03-30T21:08:18Z    INFO    Successfully destroyed cluster and infrastructure       {"namespace": "local-cluster", "name": "production", "infraID": "prod-p6mj8"}
+----
+
+== Creating a hosted cluster in steps
+
+Sometimes it is desirable to deploy a hosted cluster in steps rather than the all in one command you used in the previous section. In this section you will re-create the hosted production cluster using individual steps to create AWS infrastructure
+
+=== Create the AWS Infrastructure
+
+Just like before you will use the `hypershift` command line tool to create the AWS infrastructure resources. Only this time you will save the output to a JSON file to be used in the next steps.
+
+This command does not know that it has access to the OpenShift cluster for the secret information - therefore you need to extract the information from the secret that has been prepopulated for you.
+
+. Retrieve the AWS access key id, AWS secret access key and Route53 base domain and save them in environment variables:
++
+[source,sh]
+----
+export AWS_ACCESS_KEY_ID=$(oc get secret aws-credentials -n local-cluster -o json | jq -r .data.aws_access_key_id | base64 -d)
+export AWS_SECRET_ACCESS_KEY=$(oc get secret aws-credentials -n local-cluster -o json | jq -r .data.aws_secret_access_key | base64 -d)
+export AWS_BASE_DOMAIN=$(oc get secret aws-credentials -n local-cluster -o json | jq -r .data.baseDomain | base64 -d)
+----
+
+. Write an AWS credentials file:
++
+[source,sh]
+----
+cat << EOF >> ~/awscreds
+[default]
+aws_access_key_id = ${AWS_ACCESS_KEY_ID}
+aws_secret_access_key = ${AWS_SECRET_ACCESS_KEY}
+EOF
+----
+
+. Run the hypershift command line tool to create the AWS infrastructure:
++
+[source,sh]
+----
+hypershift create infra aws \
+  --name production \
+  --infra-id prod-${GUID} \
+  --region us-west-1 \
+  --zones us-west-1b,us-west-1c \
+  --aws-creds ~/.awscreds \
+  --base-domain ${AWS_BASE_DOMAIN} \
+  --output-file ~/aws-infra.json
+----
+
+. Examine the created json file:
++
+[source,sh]
+----
+cat ~/aws-infra.json; echo
+----
++
+.Sample Output
+[source,texinfo]
+----
+{
+  "region": "us-west-1",
+  "zone": "",
+  "infraID": "prod-p6mj8",
+  "machineCIDR": "10.0.0.0/16",
+  "vpcID": "vpc-0e7c84ab6c58facfc",
+  "zones": [
+    {
+      "name": "us-west-1b",
+      "subnetID": "subnet-0608b4e7033f81c41"
+    },
+    {
+      "name": "us-west-1c",
+      "subnetID": "subnet-07059a28cf4cf5ad7"
+    }
+  ],
+  "securityGroupID": "sg-0ee0d3655402f7fb5",
+  "Name": "production",
+  "baseDomain": "p6mj8.sandbox2651.opentlc.com",
+  "baseDomainPrefix": "",
+  "publicZoneID": "Z00045013VC4PAOW2O6CC",
+  "privateZoneID": "Z026668637ESPE6UFJY3C",
+  "localZoneID": "Z07133821Q31QXJKQ4F0R",
+  "proxyAddr": ""
+}
+----
+
+. This command needs an AWS S3 bucket to store information in. An S3 bucket has already been created for you. Retrieve the information from the secret and store it in environment variables:
++
+[source,sh]
+----
+export AWS_S3_BUCKET=$(oc get secret hypershift-operator-oidc-provider-s3-credentials -n local-cluster -o json | jq -r .data.bucket | base64 -d)
+export AWS_S3_BUCKET_REGION=$(oc get secret hypershift-operator-oidc-provider-s3-credentials -n local-cluster -o json | jq -r .data.region | base64 -d)
+----
+
+. Set variables for the AWS resources you need next:
++
+[source,sh]
+----
+export AWS_LOCAL_ZONE_ID=$(cat aws-infra.json | jq -r .localZoneID)
+export AWS_PRIVATE_ZONE_ID=$(cat aws-infra.json | jq -r .privateZoneID)
+export AWS_PUBLIC_ZONE_ID=$(cat aws-infra.json | jq -r .publicZoneID)
+----
+
+. Now create the IAM resources for the hosted cluster:
++
+[source,sh]
+----
+hypershift create iam aws \
+  --aws-creds ~/.awscreds \
+  --infra-id prod-${GUID} \
+  --local-zone-id ${AWS_LOCAL_ZONE_ID} \
+  --private-zone-id ${AWS_PRIVATE_ZONE_ID} \
+  --public-zone-id ${AWS_PUBLIC_ZONE_ID} \
+  --oidc-storage-provider-s3-bucket-name ${AWS_S3_BUCKET} \
+  --oidc-storage-provider-s3-region ${AWS_S3_BUCKET_REGION} \
+  --output-file ~/aws-iam.json
+----
++
+.Sample Output
+[source,texinfo]
+----
+2023-03-30T21:52:15Z    INFO    Detected Issuer URL     {"issuer": "https://oidc-storage-p6mj8.s3.us-east-2.amazonaws.com/prod-p6mj8"}
+2023-03-30T21:52:15Z    INFO    Created OIDC provider   {"provider": "arn:aws:iam::588618638711:oidc-provider/oidc-storage-p6mj8.s3.us-east-2.amazonaws.com/prod-p6mj8"}
+2023-03-30T21:52:15Z    INFO    Created role    {"name": "prod-p6mj8-openshift-ingress"}
+2023-03-30T21:52:15Z    INFO    Created role policy     {"name": "prod-p6mj8-openshift-ingress"}
+2023-03-30T21:52:15Z    INFO    Created role    {"name": "prod-p6mj8-openshift-image-registry"}
+2023-03-30T21:52:15Z    INFO    Created role policy     {"name": "prod-p6mj8-openshift-image-registry"}
+2023-03-30T21:52:15Z    INFO    Created role    {"name": "prod-p6mj8-aws-ebs-csi-driver-controller"}
+2023-03-30T21:52:15Z    INFO    Created role policy     {"name": "prod-p6mj8-aws-ebs-csi-driver-controller"}
+2023-03-30T21:52:16Z    INFO    Created role    {"name": "prod-p6mj8-cloud-controller"}
+2023-03-30T21:52:16Z    INFO    Created role policy     {"name": "prod-p6mj8-cloud-controller"}
+2023-03-30T21:52:16Z    INFO    Created role    {"name": "prod-p6mj8-node-pool"}
+2023-03-30T21:52:16Z    INFO    Created role policy     {"name": "prod-p6mj8-node-pool"}
+2023-03-30T21:52:16Z    INFO    Created role    {"name": "prod-p6mj8-control-plane-operator"}
+2023-03-30T21:52:16Z    INFO    Created role policy     {"name": "prod-p6mj8-control-plane-operator"}
+2023-03-30T21:52:16Z    INFO    Created role    {"name": "prod-p6mj8-cloud-network-config-controller"}
+2023-03-30T21:52:16Z    INFO    Created role policy     {"name": "prod-p6mj8-cloud-network-config-controller"}
+2023-03-30T21:52:16Z    INFO    Created role    {"name": "prod-p6mj8-worker-role"}
+2023-03-30T21:52:16Z    INFO    Created instance profile        {"name": "prod-p6mj8-worker"}
+2023-03-30T21:52:17Z    INFO    Added role to instance profile  {"role": "prod-p6mj8-worker-role", "profile": "prod-p6mj8-worker"}
+2023-03-30T21:52:17Z    INFO    Created role policy     {"name": "prod-p6mj8-worker-policy"}
+2023-03-30T21:52:17Z    INFO    Created IAM profile     {"name": "prod-p6mj8-worker", "region": "us-east-1"}
+----
+
+. Examine the output file:
++
+[source,sh]
+----
+cat ~/aws-iam.json; echo
+----
++
+.Sample Output
+[source,texinfo]
+----
+
+  "region": "us-east-1",
+  "profileName": "prod-p6mj8-worker",
+  "infraID": "prod-p6mj8",
+  "issuerURL": "https://oidc-storage-p6mj8.s3.us-east-2.amazonaws.com/prod-p6mj8",
+  "roles": {
+    "ingressARN": "arn:aws:iam::588618638711:role/prod-p6mj8-openshift-ingress",
+    "imageRegistryARN": "arn:aws:iam::588618638711:role/prod-p6mj8-openshift-image-registry",
+    "storageARN": "arn:aws:iam::588618638711:role/prod-p6mj8-aws-ebs-csi-driver-controller",
+    "networkARN": "arn:aws:iam::588618638711:role/prod-p6mj8-cloud-network-config-controller",
+    "kubeCloudControllerARN": "arn:aws:iam::588618638711:role/prod-p6mj8-cloud-controller",
+    "nodePoolManagementARN": "arn:aws:iam::588618638711:role/prod-p6mj8-node-pool",
+    "controlPlaneOperatorARN": "arn:aws:iam::588618638711:role/prod-p6mj8-control-plane-operator"
+  },
+  "kmsKeyARN": "",
+  "kmsProviderRoleARN": ""
+}
+----
+
+. Now finally you can create the hosted cluster:
++
+[source,sh]
+----
+hypershift create cluster aws \
+  --infra-json ~/aws-infra.json \
+  --iam-json ~/aws-iam.json \
+  --name production \
+  --infra-id prod-${GUID} \
+  --region us-west-1 \
+  --zones us-west-1b,us-west-1c \
+  --instance-type m6a.large \
+  --root-volume-type gp3 \
+  --root-volume-size 100 \
+  --etcd-storage-class gp3-csi \
+  --control-plane-availability-policy SingleReplica \
+  --infra-availability-policy SingleReplica \
+  --network-type OVNKubernetes \
+  --release-image quay.io/openshift-release-dev/ocp-release:4.12.9-x86_64 \
+  --node-pool-replicas 1 \
+  --namespace local-cluster \
+  --secret-creds aws-credentials \
+  --auto-repair \
+  --generate-ssh
+----
++
+.Sample Output
+[source,texinfo,options=nowrap]
+----
+2023-03-30T21:55:25Z    INFO    Retreiving credentials secret   {"namespace": "local-cluster", "name": "aws-credentials"}
+Using baseDomain from the secret-creds baseDomain p6mj8.sandbox2651.opentlc.com
+2023-03-30T21:55:29Z    INFO    Applied Kube resource   {"kind": "Namespace", "namespace": "", "name": "local-cluster"}
+2023-03-30T21:55:29Z    INFO    Applied Kube resource   {"kind": "Secret", "namespace": "local-cluster", "name": "production-pull-secret"}
+2023-03-30T21:55:29Z    INFO    Applied Kube resource   {"kind": "", "namespace": "local-cluster", "name": "production"}
+2023-03-30T21:55:29Z    INFO    Applied Kube resource   {"kind": "Secret", "namespace": "local-cluster", "name": "production-etcd-encryption-key"}
+2023-03-30T21:55:29Z    INFO    Applied Kube resource   {"kind": "Secret", "namespace": "local-cluster", "name": "production-ssh-key"}
+2023-03-30T21:55:29Z    INFO    Applied Kube resource   {"kind": "NodePool", "namespace": "local-cluster", "name": "production-us-west-1b"}
+2023-03-30T21:55:29Z    INFO    Applied Kube resource   {"kind": "NodePool", "namespace": "local-cluster", "name": "production-us-west-1c"}
+----
++
+You see that there is much less output because all the AWS infrastructure has been created beforehand.
+
+. Create the ManagedCluster:
++
+[source,sh]
+----
+cat << EOF | oc apply -f -
+---
+apiVersion: cluster.open-cluster-management.io/v1
+kind: ManagedCluster
+metadata:
+  name: production
+  annotations:
+    import.open-cluster-management.io/hosting-cluster-name: local-cluster
+    import.open-cluster-management.io/klusterlet-deploy-mode: Hosted
+  labels:
+    name: production
+    cloud: auto-detect
+    cluster.open-cluster-management.io/clusterset: default
+    vendor: OpenShift
+    guid: ${GUID}
+    rhdp_type: sandbox
+    rhdp_purpose: production
+spec:
+  hubAcceptsClient: true
+  leaseDurationSeconds: 60
+EOF
+----
+
+. Create the KlusterletAddonConfig:
++
+[source,sh]
+----
+cat << EOF | oc apply -f -
+apiVersion: agent.open-cluster-management.io/v1
+kind: KlusterletAddonConfig
+metadata:
+  name: production
+  namespace: production
+spec:
+  clusterName: production
+  clusterNamespace: production
+  clusterLabels:
+    cloud: auto-detect
+    vendor: auto-detect
+  applicationManager:
+    enabled: true
+  certPolicyController:
+    enabled: true
+  iamPolicyController:
+    enabled: true
+  policyController:
+    enabled: true
+  searchCollector:
+    enabled: false
+EOF
+----
+
+. Retrieve the kubeadmin password to access your new cluster and save it to a file in the `$HOME/.kube` directory:
++
+[source,sh]
+----
+oc get secret $(oc get hc production -n local-cluster -o json | jq -r .status.kubeadminPassword.name) -n local-cluster --template='{{ .data.password }}' | base64 -d >$HOME/.kube/production.kubeadmin-password
+----
+
+. Retrieve the kubeconfig file to access your new cluster and save it to a file in the `$HOME/.kube` directory:
++
+[source,sh]
+----
+oc get secret $(oc get hc production -n local-cluster -o json | jq -r .status.kubeconfig.name) -n local-cluster --template='{{ .data.kubeconfig }}' | base64 -d >$HOME/.kube/production-kubeconfig
+----
+
+Now once the hosted cluster has finished deploying you are ready to use the hosted cluster.
+
 == Summary
 
 This concludes this lab. You have now used Hypershift to deploy a new OpenShift cluster - and you have now seen how quickly you can deploy a new cluster compared to running the OpenShift installer.
 
-= Next steps
+You also did the deployment by separating the creation of AWS infrastructure and AWS IAM resources from the creation of the hosted control plane.
 
-Follow https://github.com/redhat-cop/openshift-lab-origin/blob/master/HyperShift/Deploy_Application_.adoc[Deploy an application to HyperShift Clusters] to deploy a micro services application to both HyperShift clusters using Red Hat Advanced Cluster Management for Kubernetes.
+== Next steps
+
+Follow https://github.com/redhat-cop/openshift-lab-origin/blob/master/HyperShift_Lab/Deploy_Application_.adoc[Deploy an application to HyperShift Clusters] to deploy a simple application to both HyperShift clusters using Red Hat Advanced Cluster Management for Kubernetes.
