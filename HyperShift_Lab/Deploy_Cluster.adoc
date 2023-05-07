@@ -87,7 +87,7 @@ hypershift create cluster aws \
   --generate-ssh
 ----
 +
-Here is what all these parameters mean:
+Here is what all these parameters mean. Also, if you are running this command in eth demo environment, make sure you define GUID and adjust AWS region and availability zones to where the hub cluster is deployed:
 +
 [cols=2,option=header]
 |====
