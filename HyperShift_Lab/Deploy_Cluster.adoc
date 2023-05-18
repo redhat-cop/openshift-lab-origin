@@ -851,4 +851,4 @@ You also did the deployment by separating the creation of AWS infrastructure and
 
 == Next steps
 
-Follow https://github.com/redhat-cop/openshift-lab-origin/blob/master/HyperShift_Lab/Deploy_Application_.adoc[Deploy an application to HyperShift Clusters] to deploy a simple application to both HyperShift clusters using Red Hat Advanced Cluster Management for Kubernetes.
+Follow https://github.com/redhat-cop/openshift-lab-origin/blob/master/HyperShift_Lab/Deploy_Application.adoc[Deploy an application to HyperShift Clusters] to deploy a simple application to both HyperShift clusters using Red Hat Advanced Cluster Management for Kubernetes.
