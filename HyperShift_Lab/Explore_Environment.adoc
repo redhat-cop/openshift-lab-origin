@@ -452,4 +452,4 @@ https://console-openshift-console.apps.cluster-p6mj8.sandbox2651.opentlc.com
 
 This concludes the exploratory section of this lab. 
 
-Follow https://github.com/redhat-cop/openshift-lab-origin/blob/master/HyperShift/Deploy_Cluster.adoc[Deploy a cluster using HyperShift] to deploy a new cluster into your environment using HyperShift.
+Follow https://github.com/redhat-cop/openshift-lab-origin/blob/master/HyperShift_Lab/Deploy_Cluster.adoc[Deploy a cluster using HyperShift] to deploy a new cluster into your environment using HyperShift.
