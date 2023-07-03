@@ -79,7 +79,7 @@ hypershift create cluster aws \
   --control-plane-availability-policy SingleReplica \
   --infra-availability-policy SingleReplica \
   --network-type OVNKubernetes \
-  --release-image quay.io/openshift-release-dev/ocp-release:4.12.9-x86_64 \
+  --release-image quay.io/openshift-release-dev/ocp-release:4.13.4-x86_64 \
   --node-pool-replicas 1 \
   --namespace local-cluster \
   --secret-creds aws-credentials \
@@ -189,7 +189,7 @@ oc get hostedcluster -n local-cluster
 [source,texinfo,options=nowrap]
 ----
 NAME          VERSION   KUBECONFIG                     PROGRESS    AVAILABLE   PROGRESSING   MESSAGE
-development   4.12.9    development-admin-kubeconfig   Completed   True        False         The hosted control plane is available
+development   4.13.4    development-admin-kubeconfig   Completed   True        False         The hosted control plane is available
 production              production-admin-kubeconfig    Partial     False       False         Waiting for hosted control plane to be healthy
 ----
 
@@ -206,7 +206,7 @@ watch -n 10 oc get hostedcluster -n local-cluster
 Every 10.0s: oc get hostedcluster -n local-cluster                                                                                                         bastion.p6mj8.internal: Thu Mar 30 18:34:06 2023
 
 NAME          VERSION   KUBECONFIG                     PROGRESS    AVAILABLE   PROGRESSING   MESSAGE
-development   4.12.9    development-admin-kubeconfig   Completed   True        False         The hosted control plane is available
+development   4.13.4    development-admin-kubeconfig   Completed   True        False         The hosted control plane is available
 production              production-admin-kubeconfig    Partial     True        False         The hosted control plane is available
 ----
 +
@@ -304,18 +304,18 @@ dns
 image-registry                                                                                    
 ingress                                              False       True          True       20m     The "default" ingress controller reports Available=False: IngressControllerUnavailable: One or more status conditions indicate unavailable: DeploymentAvailable=False (DeploymentUnavailable: The deployment has Available status condition set to False (reason: MinimumReplicasUnavailable) with message: Deployment does not have minimum availability.)
 insights                                                                                          
-kube-apiserver                             4.11.34   True        False         False      21m     
-kube-controller-manager                    4.11.34   True        False         False      21m     
-kube-scheduler                             4.11.34   True        False         False      21m     
+kube-apiserver                             4.13.4    True        False         False      21m     
+kube-controller-manager                    4.13.4    True        False         False      21m     
+kube-scheduler                             4.13.4    True        False         False      21m     
 kube-storage-version-migrator                                                                     
 monitoring                                                                                        
-network                                    4.11.34   True        True          True       20m     DaemonSet "/openshift-ovn-kubernetes/ovnkube-node" rollout is not making progress - last change 2023-03-30T18:36:50Z...
-openshift-apiserver                        4.11.34   True        False         False      21m     
-openshift-controller-manager               4.11.34   True        False         False      21m     
+network                                    4.13.4    True        True          True       20m     DaemonSet "/openshift-ovn-kubernetes/ovnkube-node" rollout is not making progress - last change 2023-03-30T18:36:50Z...
+openshift-apiserver                        4.13.4    True        False         False      21m     
+openshift-controller-manager               4.13.4    True        False         False      21m     
 openshift-samples                                                                                 
-operator-lifecycle-manager                 4.11.34   True        False         False      21m     
-operator-lifecycle-manager-catalog         4.11.34   True        False         False      21m     
-operator-lifecycle-manager-packageserver   4.11.34   True        False         False      21m     
+operator-lifecycle-manager                 4.13.4    True        False         False      21m     
+operator-lifecycle-manager-catalog         4.13.4    True        False         False      21m     
+operator-lifecycle-manager-packageserver   4.13.4    True        False         False      21m     
 service-ca                                                                                        
 storage                                                                                           
 ----
@@ -364,27 +364,27 @@ oc get co
 [source,texinfo,options=nowrap]
 ----
 NAME                                       VERSION   AVAILABLE   PROGRESSING   DEGRADED   SINCE   MESSAGE
-console                                    4.12.9    True        False         False      20s     
-csi-snapshot-controller                    4.12.9    True        False         False      6m57s   
-dns                                        4.12.9    True        False         False      2m35s   
-image-registry                             4.12.9    True        False         False      2m26s   
-ingress                                    4.12.9    True        False         False      119s    
-insights                                   4.12.9    True        False         False      3m20s   
-kube-apiserver                             4.12.9    True        False         False      7m7s    
-kube-controller-manager                    4.12.9    True        False         False      7m7s    
-kube-scheduler                             4.12.9    True        False         False      7m7s    
-kube-storage-version-migrator              4.12.9    True        False         False      2m47s   
-monitoring                                 4.12.9    True        False         False      58s     
-network                                    4.12.9    True        False         False      6m52s   
-node-tuning                                4.12.9    True        False         False      3m51s   
-openshift-apiserver                        4.12.9    True        False         False      7m7s    
-openshift-controller-manager               4.12.9    True        False         False      7m7s    
-openshift-samples                          4.12.9    True        False         False      2m4s    
-operator-lifecycle-manager                 4.12.9    True        False         False      6m36s   
-operator-lifecycle-manager-catalog         4.12.9    True        False         False      6m55s   
-operator-lifecycle-manager-packageserver   4.12.9    True        False         False      7m6s    
-service-ca                                 4.12.9    True        False         False      3m17s   
-storage                                    4.12.9    True        False         False      3m43s   
+console                                    4.13.4    True        False         False      20s     
+csi-snapshot-controller                    4.13.4    True        False         False      6m57s   
+dns                                        4.13.4    True        False         False      2m35s   
+image-registry                             4.13.4    True        False         False      2m26s   
+ingress                                    4.13.4    True        False         False      119s    
+insights                                   4.13.4    True        False         False      3m20s   
+kube-apiserver                             4.13.4    True        False         False      7m7s    
+kube-controller-manager                    4.13.4    True        False         False      7m7s    
+kube-scheduler                             4.13.4    True        False         False      7m7s    
+kube-storage-version-migrator              4.13.4    True        False         False      2m47s   
+monitoring                                 4.13.4    True        False         False      58s     
+network                                    4.13.4    True        False         False      6m52s   
+node-tuning                                4.13.4    True        False         False      3m51s   
+openshift-apiserver                        4.13.4    True        False         False      7m7s    
+openshift-controller-manager               4.13.4    True        False         False      7m7s    
+openshift-samples                          4.13.4    True        False         False      2m4s    
+operator-lifecycle-manager                 4.13.4    True        False         False      6m36s   
+operator-lifecycle-manager-catalog         4.13.4    True        False         False      6m55s   
+operator-lifecycle-manager-packageserver   4.13.4    True        False         False      7m6s    
+service-ca                                 4.13.4    True        False         False      3m17s   
+storage                                    4.13.4    True        False         False      3m43s   
 ----
 
 . Retrieve the OpenShift console URL:
@@ -747,7 +747,7 @@ hypershift create cluster aws \
   --control-plane-availability-policy SingleReplica \
   --infra-availability-policy SingleReplica \
   --network-type OVNKubernetes \
-  --release-image quay.io/openshift-release-dev/ocp-release:4.12.9-x86_64 \
+  --release-image quay.io/openshift-release-dev/ocp-release:4.13.4-x86_64 \
   --node-pool-replicas 1 \
   --namespace local-cluster \
   --secret-creds aws-credentials \
