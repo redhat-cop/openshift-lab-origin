@@ -409,12 +409,12 @@ Login Succeeded!
 +
 [source,sh]
 ----
-export OPERATOR_VERSION=v2.0.0
+export OPERATOR_VERSION=v2.0.1
 
 # No v in front of the Bundle version
-export BUNDLE_VERSION=2.0.0
+export BUNDLE_VERSION=2.0.1
 
-export CATALOG_VERSION=v2.0.0
+export CATALOG_VERSION=v2.0.1
 ----
 
 . To build on Linux with `podman` instead of `docker` make sure that docker is symlink to podman:
@@ -644,7 +644,7 @@ spec:
                 type: string
               giteaAdminPasswordLength:
                 description: If a giteaAdminUser is provided but no giteaAdminPassowrd is provided a random ASCII password with the length specified will be created. Default is 16
-                type: string
+                type: integer
               giteaAdminPasswordSecretName:
                 description: Name of a secret containing the Gitea admin user's password in secret key adminPassword. If this variable is set it takes precedence over all other ways to specify/generate an admin password.
                 type: string
@@ -927,7 +927,7 @@ Description for the operator (required):
 > Gitea Operator - provided by Red Hat Demo Platform, see https://github.com/rhpds/gitea-operator for documentation.
 
 Provider's name for the operator (required):
-> Red Hat Portfolio Engineering
+> Red Hat Portfolio Technology
 
 Any relevant URL for the provider name (optional):
 >
@@ -1111,7 +1111,7 @@ INFO[0000] [podman build --format docker -f ./index.Dockerfile2862004519 -t quay
 +
 [source,sh]
 ----
-export CATALOG_VERSION_PREVIOUS=v1.1.0
+export CATALOG_VERSION_PREVIOUS=v2.0.0
 ----
 
 .. Create the index image - this image contains just the bundle image for the gitea operator:
