@@ -193,7 +193,7 @@ development     true           https://a3ec8aa1e521d4fbd8fb24881828fe82-13e768b6
 local-cluster   true           https://api.cluster-p6mj8.sandbox2651.opentlc.com:6443                                       True     True        80m
 ----
 
-. There are two managed clusters available: `local-cluster` - which is your hub cluster - and `` which is the small development cluster that has already been pre-deployed.
+. There are two managed clusters available: `local-cluster` - which is your hub cluster - and `development` which is the small development cluster that has already been pre-deployed.
 +
 Examine the development managed cluster:
 +
