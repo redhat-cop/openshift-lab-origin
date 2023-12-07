@@ -650,9 +650,9 @@ export AWS_S3_BUCKET_REGION=$(oc get secret hypershift-operator-oidc-provider-s3
 +
 [source,sh]
 ----
-export AWS_LOCAL_ZONE_ID=$(cat aws-infra.json | jq -r .localZoneID)
-export AWS_PRIVATE_ZONE_ID=$(cat aws-infra.json | jq -r .privateZoneID)
-export AWS_PUBLIC_ZONE_ID=$(cat aws-infra.json | jq -r .publicZoneID)
+export AWS_LOCAL_ZONE_ID=$(cat ~/aws-infra.json | jq -r .localZoneID)
+export AWS_PRIVATE_ZONE_ID=$(cat ~/aws-infra.json | jq -r .privateZoneID)
+export AWS_PUBLIC_ZONE_ID=$(cat ~/aws-infra.json | jq -r .publicZoneID)
 ----
 
 . Now create the IAM resources for the hosted cluster:
