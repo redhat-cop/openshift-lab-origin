@@ -14,16 +14,16 @@ Right now the only way to deploy a new cluster is by using the `hypershift` CLI 
 +
 [source,sh]
 ----
-oc get consoleclidownload hypershift-cli-download -o json | jq -r '.spec.links[] | select(.text=="Download hypershift CLI for Linux for x86_64").href'
+oc get consoleclidownload hcp-cli-download -o json | jq -r '.spec.links[] | select(.text=="Download hcp CLI for Linux for x86_64").href'
 ----
 +
 .Sample Output
 [source,texinfo]
 ----
-https://hypershift-cli-download-multicluster-engine.apps.cluster-p6mj8.sandbox2651.opentlc.com/linux/amd64/hypershift.tar.gz
+https://hcp-cli-download-multicluster-engine.apps.cluster-cjx7q.sandbox136.opentlc.com/linux/amd64/hcp.tar.gz
 ----
 
-. On your environment the `hypershift` command line tool has already been installed. Run it to show available options:
+. On your environment the `hcp` command line tool has already been installed. Run it to show available options:
 +
 [source,sh]
 ----
@@ -34,31 +34,27 @@ hypershift
 [source,texinfo]
 ----
 Usage:
-  hypershift [flags]
-  hypershift [command]
+  hcp [flags]
+  hcp [command]
 
 Available Commands:
-  completion   Generate the autocompletion script for the specified shell
-  console-logs Get machine instance console logs
-  create       Commands for creating HyperShift resources
-  destroy      Commands for destroying HyperShift resources
-  dump         Commands for dumping resources for debugging
-  help         Help about any command
-  install      Installs the HyperShift operator
-  version      Prints HyperShift CLI version
+  completion  Generate the autocompletion script for the specified shell
+  create      Commands for creating HostedClusters
+  destroy     Commands for destroying HostedClusters
+  help        Help about any command
 
 Flags:
-  -h, --help      help for hypershift
-  -v, --version   version for hypershift
+  -h, --help      help for hcp
+  -v, --version   version for hcp
 
-Use "hypershift [command] --help" for more information about a command.
+Use "hcp [command] --help" for more information about a command.
 ----
 
-. Run it again to show the help for `hypershift create cluster aws` - the command that you will use to deploy a "production" cluster into AWS:
+. Run it again to show the help for `hcp create cluster aws` - the command that you will use to deploy a "production" cluster into AWS:
 +
 [source,sh]
 ----
-hypershift create cluster aws --help
+hcp create cluster aws --help
 ----
 +
 There are a lot of options available. In your environment all credentials have already been provided in a secret `aws-credentials` in the `local-cluster` namespace.
@@ -67,7 +63,7 @@ There are a lot of options available. In your environment all credentials have a
 +
 [source,sh]
 ----
-hypershift create cluster aws \
+hcp create cluster aws \
   --name production \
   --infra-id prod-${GUID} \
   --region us-west-1 \
@@ -79,7 +75,7 @@ hypershift create cluster aws \
   --control-plane-availability-policy SingleReplica \
   --infra-availability-policy SingleReplica \
   --network-type OVNKubernetes \
-  --release-image quay.io/openshift-release-dev/ocp-release:4.13.4-x86_64 \
+  --release-image quay.io/openshift-release-dev/ocp-release:4.14.3-x86_64 \
   --node-pool-replicas 1 \
   --namespace local-cluster \
   --secret-creds aws-credentials \
@@ -189,7 +185,7 @@ oc get hostedcluster -n local-cluster
 [source,texinfo,options=nowrap]
 ----
 NAME          VERSION   KUBECONFIG                     PROGRESS    AVAILABLE   PROGRESSING   MESSAGE
-development   4.13.4    development-admin-kubeconfig   Completed   True        False         The hosted control plane is available
+development   4.14.3    development-admin-kubeconfig   Completed   True        False         The hosted control plane is available
 production              production-admin-kubeconfig    Partial     False       False         Waiting for hosted control plane to be healthy
 ----
 
@@ -206,7 +202,7 @@ watch -n 10 oc get hostedcluster -n local-cluster
 Every 10.0s: oc get hostedcluster -n local-cluster                                                                                                         bastion.p6mj8.internal: Thu Mar 30 18:34:06 2023
 
 NAME          VERSION   KUBECONFIG                     PROGRESS    AVAILABLE   PROGRESSING   MESSAGE
-development   4.13.4    development-admin-kubeconfig   Completed   True        False         The hosted control plane is available
+development   4.14.3    development-admin-kubeconfig   Completed   True        False         The hosted control plane is available
 production              production-admin-kubeconfig    Partial     True        False         The hosted control plane is available
 ----
 +
@@ -304,18 +300,18 @@ dns
 image-registry                                                                                    
 ingress                                              False       True          True       20m     The "default" ingress controller reports Available=False: IngressControllerUnavailable: One or more status conditions indicate unavailable: DeploymentAvailable=False (DeploymentUnavailable: The deployment has Available status condition set to False (reason: MinimumReplicasUnavailable) with message: Deployment does not have minimum availability.)
 insights                                                                                          
-kube-apiserver                             4.13.4    True        False         False      21m     
-kube-controller-manager                    4.13.4    True        False         False      21m     
-kube-scheduler                             4.13.4    True        False         False      21m     
+kube-apiserver                             4.14.3    True        False         False      21m
+kube-controller-manager                    4.14.3    True        False         False      21m
+kube-scheduler                             4.14.3    True        False         False      21m
 kube-storage-version-migrator                                                                     
 monitoring                                                                                        
-network                                    4.13.4    True        True          True       20m     DaemonSet "/openshift-ovn-kubernetes/ovnkube-node" rollout is not making progress - last change 2023-03-30T18:36:50Z...
-openshift-apiserver                        4.13.4    True        False         False      21m     
-openshift-controller-manager               4.13.4    True        False         False      21m     
+network                                    4.14.3    True        True          True       20m     DaemonSet "/openshift-ovn-kubernetes/ovnkube-node" rollout is not making progress - last change 2023-03-30T18:36:50Z...
+openshift-apiserver                        4.14.3    True        False         False      21m
+openshift-controller-manager               4.14.3    True        False         False      21m
 openshift-samples                                                                                 
-operator-lifecycle-manager                 4.13.4    True        False         False      21m     
-operator-lifecycle-manager-catalog         4.13.4    True        False         False      21m     
-operator-lifecycle-manager-packageserver   4.13.4    True        False         False      21m     
+operator-lifecycle-manager                 4.14.3    True        False         False      21m
+operator-lifecycle-manager-catalog         4.14.3    True        False         False      21m
+operator-lifecycle-manager-packageserver   4.14.3    True        False         False      21m
 service-ca                                                                                        
 storage                                                                                           
 ----
@@ -339,16 +335,16 @@ No resources found
 [source,texinfo,options=nowrap]
 ----
 NAME                                         STATUS     ROLES    AGE   VERSION
-ip-10-0-129-140.us-west-1.compute.internal   NotReady   worker   11s   v1.25.7+eab9cc9
-ip-10-0-156-208.us-west-1.compute.internal   NotReady   worker   12s   v1.25.7+eab9cc9
+ip-10-0-129-3.us-west-1.compute.internal     NotReady   worker   11s   v1.27.6+b49f9d1
+ip-10-0-147-241.us-west-1.compute.internal   NotReady   worker   12s   v1.27.6+b49f9d1
 ----
 +
 .Sample Output (Nodes available))
 [source,texinfo,options=nowrap]
 ----
 NAME                                         STATUS   ROLES    AGE   VERSION
-ip-10-0-129-140.us-west-1.compute.internal   Ready    worker   17m   v1.25.7+eab9cc9
-ip-10-0-156-208.us-west-1.compute.internal   Ready    worker   17m   v1.25.7+eab9cc9
+ip-10-0-129-3.us-west-1.compute.internal     Ready    worker   17m   v1.27.6+b49f9d1
+ip-10-0-147-241.us-west-1.compute.internal   Ready    worker   17m   v1.27.6+b49f9d1
 ----
 +
 Again depending on how long it has been since you created the cluster you may see no nodes, NotReady nodes or you may already see the completely deployed nodes.
@@ -364,27 +360,27 @@ oc get co
 [source,texinfo,options=nowrap]
 ----
 NAME                                       VERSION   AVAILABLE   PROGRESSING   DEGRADED   SINCE   MESSAGE
-console                                    4.13.4    True        False         False      20s     
-csi-snapshot-controller                    4.13.4    True        False         False      6m57s   
-dns                                        4.13.4    True        False         False      2m35s   
-image-registry                             4.13.4    True        False         False      2m26s   
-ingress                                    4.13.4    True        False         False      119s    
-insights                                   4.13.4    True        False         False      3m20s   
-kube-apiserver                             4.13.4    True        False         False      7m7s    
-kube-controller-manager                    4.13.4    True        False         False      7m7s    
-kube-scheduler                             4.13.4    True        False         False      7m7s    
-kube-storage-version-migrator              4.13.4    True        False         False      2m47s   
-monitoring                                 4.13.4    True        False         False      58s     
-network                                    4.13.4    True        False         False      6m52s   
-node-tuning                                4.13.4    True        False         False      3m51s   
-openshift-apiserver                        4.13.4    True        False         False      7m7s    
-openshift-controller-manager               4.13.4    True        False         False      7m7s    
-openshift-samples                          4.13.4    True        False         False      2m4s    
-operator-lifecycle-manager                 4.13.4    True        False         False      6m36s   
-operator-lifecycle-manager-catalog         4.13.4    True        False         False      6m55s   
-operator-lifecycle-manager-packageserver   4.13.4    True        False         False      7m6s    
-service-ca                                 4.13.4    True        False         False      3m17s   
-storage                                    4.13.4    True        False         False      3m43s   
+console                                    4.14.3    True        False         False      20s
+csi-snapshot-controller                    4.14.3    True        False         False      6m57s
+dns                                        4.14.3    True        False         False      2m35s
+image-registry                             4.14.3    True        False         False      2m26s
+ingress                                    4.14.3    True        False         False      119s
+insights                                   4.14.3    True        False         False      3m20s
+kube-apiserver                             4.14.3    True        False         False      7m7s
+kube-controller-manager                    4.14.3    True        False         False      7m7s
+kube-scheduler                             4.14.3    True        False         False      7m7s
+kube-storage-version-migrator              4.14.3    True        False         False      2m47s
+monitoring                                 4.14.3    True        False         False      58s
+network                                    4.14.3    True        False         False      6m52s
+node-tuning                                4.14.3    True        False         False      3m51s
+openshift-apiserver                        4.14.3    True        False         False      7m7s
+openshift-controller-manager               4.14.3    True        False         False      7m7s
+openshift-samples                          4.14.3    True        False         False      2m4s
+operator-lifecycle-manager                 4.14.3    True        False         False      6m36s
+operator-lifecycle-manager-catalog         4.14.3    True        False         False      6m55s
+operator-lifecycle-manager-packageserver   4.14.3    True        False         False      7m6s
+service-ca                                 4.14.3    True        False         False      3m17s
+storage                                    4.14.3    True        False         False      3m43s
 ----
 
 . Retrieve the OpenShift console URL:
@@ -747,7 +743,7 @@ hypershift create cluster aws \
   --control-plane-availability-policy SingleReplica \
   --infra-availability-policy SingleReplica \
   --network-type OVNKubernetes \
-  --release-image quay.io/openshift-release-dev/ocp-release:4.13.4-x86_64 \
+  --release-image quay.io/openshift-release-dev/ocp-release:4.14.3-x86_64 \
   --node-pool-replicas 1 \
   --namespace local-cluster \
   --secret-creds aws-credentials \

@@ -17,8 +17,8 @@ Hosted control planes are currently in Tech Preview on Red Hat Advanced Cluster 
 
 The catalog item deploys the following environment::
 
-* OpenShift Container Platform 4.13.
-* Red Hat Advanced Cluster Management for Kubernetes (RHACM) 2.8 installed and configured.
+* OpenShift Container Platform 4.14.
+* Red Hat Advanced Cluster Management for Kubernetes (RHACM) 2.9 installed and configured.
 * Technology preview for HyperShift enabled and configured on RHACM.
 * A small "development" cluster has been pre-deployed using hosted control planes.
 
@@ -34,7 +34,7 @@ The instructions cover the following scenarios:
 
 Further documentation about enabling, configuring and using hosted control planes can be found at the following link:
 
-* RHACM 2.8: https://access.redhat.com/documentation/en-us/red_hat_advanced_cluster_management_for_kubernetes/2.8/html/clusters/cluster_mce_overview#hosted-control-planes-intro
+* RHACM 2.9: https://access.redhat.com/documentation/en-us/red_hat_advanced_cluster_management_for_kubernetes/2.9/html/clusters/cluster_mce_overview#hosted-control-planes-intro
 
 == Information you will need
 

@@ -23,12 +23,12 @@ oc get nodes
 [source,texinfo,options=nowrap]
 ----
 NAME                                         STATUS   ROLES                  AGE    VERSION
-ip-10-0-145-251.us-east-2.compute.internal   Ready    control-plane,master   103m   v1.25.7+eab9cc9
-ip-10-0-190-177.us-east-2.compute.internal   Ready    worker                 98m    v1.25.7+eab9cc9
-ip-10-0-193-147.us-east-2.compute.internal   Ready    control-plane,master   103m   v1.25.7+eab9cc9
-ip-10-0-202-20.us-east-2.compute.internal    Ready    control-plane,master   103m   v1.25.7+eab9cc9
-ip-10-0-227-190.us-east-2.compute.internal   Ready    worker                 98m    v1.25.7+eab9cc9
-ip-10-0-227-213.us-east-2.compute.internal   Ready    worker                 97m    v1.25.7+eab9cc9
+ip-10-0-145-251.us-east-2.compute.internal   Ready    control-plane,master   103m    v1.27.6+b49f9d1
+ip-10-0-190-177.us-east-2.compute.internal   Ready    worker                 98m     v1.27.6+b49f9d1
+ip-10-0-193-147.us-east-2.compute.internal   Ready    control-plane,master   103m    v1.27.6+b49f9d1
+ip-10-0-202-20.us-east-2.compute.internal    Ready    control-plane,master   103m    v1.27.6+b49f9d1
+ip-10-0-227-190.us-east-2.compute.internal   Ready    worker                 98m     v1.27.6+b49f9d1
+ip-10-0-227-213.us-east-2.compute.internal   Ready    worker                 97m     v1.27.6+b49f9d1
 ----
 
 . You will see that your hub cluster has three control plane nodes (`master, control-plane`) and three worker nodes (`worker`).
@@ -69,7 +69,7 @@ oc get hostedcluster
 [source,texinfo,options=nowrap]
 ----
 NAME          VERSION   KUBECONFIG                     PROGRESS    AVAILABLE   PROGRESSING   MESSAGE
-development   4.13.4    development-admin-kubeconfig   Completed   True        False         The hosted control plane is available
+development   4.14.3    development-admin-kubeconfig   Completed   True        False         The hosted control plane is available
 ----
 +
 [NOTE]
@@ -228,7 +228,7 @@ oc get nodepools -n local-cluster
 [source,texinfo,options="nowrap"]
 ----
 NAME                     CLUSTER       DESIRED NODES   CURRENT NODES   AUTOSCALING   AUTOREPAIR   VERSION   UPDATINGVERSION   UPDATINGCONFIG   MESSAGE
-development-us-west-2a   development   1               1               False         True         4.13.4
+development-us-west-2a   development   1               1               False         True         4.14.3
 ----
 +
 You will see that there is only one `NodePool`, that it is supposed to have one worker node and that one worker node is available.
@@ -246,7 +246,7 @@ oc get machine.cluster
 [source,texinfo,options="nowrap"]
 ----
 NAME                                      CLUSTER     NODENAME                                     PROVIDERID                              PHASE     AGE   VERSION
-development-us-west-2a-66485f7756-6bwxz   dev-p6mj8   ip-10-0-135-251.us-west-2.compute.internal   aws:///us-west-2a/i-0a302ed5455e1f44c   Running   78m   4.13.4
+development-us-west-2a-66485f7756-6bwxz   dev-p6mj8   ip-10-0-135-251.us-west-2.compute.internal   aws:///us-west-2a/i-0a302ed5455e1f44c   Running   78m   4.14.3
 ----
 
 . Because this cluster is running on AWS there is also a corresponding `AWSMachine`:
@@ -362,7 +362,7 @@ oc get nodes
 [source,texinfo,options=nowrap]
 ----
 NAME                                         STATUS   ROLES    AGE   VERSION
-ip-10-0-135-251.us-west-2.compute.internal   Ready    worker   75m   v1.25.7+eab9cc9
+ip-10-0-135-251.us-west-2.compute.internal   Ready    worker   75m   v1.27.6+b49f9d1
 ----
 +
 Note that there is only one `worker` nodes, no `control-plane` nodes. That's because the control plane for this cluster is hosted as pods on the hub cluster as you previously explored.
@@ -378,27 +378,27 @@ oc get co
 [source,texinfo,options=nowrap]
 ----
 NAME                                       VERSION   AVAILABLE   PROGRESSING   DEGRADED   SINCE   MESSAGE
-console                                    4.13.4    True        False         False      71m     
-csi-snapshot-controller                    4.13.4    True        False         False      79m     
-dns                                        4.13.4    True        False         False      74m     
-image-registry                             4.13.4    True        False         False      73m     
-ingress                                    4.13.4    True        False         False      73m     
-insights                                   4.13.4    True        False         False      75m     
-kube-apiserver                             4.13.4    True        False         False      79m     
-kube-controller-manager                    4.13.4    True        False         False      79m     
-kube-scheduler                             4.13.4    True        False         False      79m     
-kube-storage-version-migrator              4.13.4    True        False         False      74m     
-monitoring                                 4.13.4    True        False         False      72m     
-network                                    4.13.4    True        False         False      79m     
-node-tuning                                4.13.4    True        False         False      75m     
-openshift-apiserver                        4.13.4    True        False         False      79m     
-openshift-controller-manager               4.13.4    True        False         False      79m     
-openshift-samples                          4.13.4    True        False         False      73m     
-operator-lifecycle-manager                 4.13.4    True        False         False      78m     
-operator-lifecycle-manager-catalog         4.13.4    True        False         False      79m     
-operator-lifecycle-manager-packageserver   4.13.4    True        False         False      79m     
-service-ca                                 4.13.4    True        False         False      75m     
-storage                                    4.13.4    True        False         False      75m     
+console                                    4.14.3    True        False         False      71m
+csi-snapshot-controller                    4.14.3    True        False         False      79m
+dns                                        4.14.3    True        False         False      74m
+image-registry                             4.14.3    True        False         False      73m
+ingress                                    4.14.3    True        False         False      73m
+insights                                   4.14.3    True        False         False      75m
+kube-apiserver                             4.14.3    True        False         False      79m
+kube-controller-manager                    4.14.3    True        False         False      79m
+kube-scheduler                             4.14.3    True        False         False      79m
+kube-storage-version-migrator              4.14.3    True        False         False      74m
+monitoring                                 4.14.3    True        False         False      72m
+network                                    4.14.3    True        False         False      79m
+node-tuning                                4.14.3    True        False         False      75m
+openshift-apiserver                        4.14.3    True        False         False      79m
+openshift-controller-manager               4.14.3    True        False         False      79m
+openshift-samples                          4.14.3    True        False         False      73m
+operator-lifecycle-manager                 4.14.3    True        False         False      78m
+operator-lifecycle-manager-catalog         4.14.3    True        False         False      79m
+operator-lifecycle-manager-packageserver   4.14.3    True        False         False      79m
+service-ca                                 4.14.3    True        False         False      75m
+storage                                    4.14.3    True        False         False      75m
 ----
 +
 Note that there a quite a few less cluster operators on a cluster with a hosted control plane than on a regular OpenShift cluster. This is of course because the control plane is not managed by the cluster operators but by RHACM.
