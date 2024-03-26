@@ -1,4 +1,4 @@
-= Building and publishing a Gitea Operator using the Ansible Operator SDK 1.30
+= Building and publishing a Gitea Operator using the Ansible Operator SDK 1.34.1
 
 == Install Operator SDK
 
@@ -12,7 +12,7 @@ In order to build an operator you need to install the Operator SDK binaries on y
 .Linux
 [source,sh]
 ----
-RELEASE_VERSION=v1.30.0
+RELEASE_VERSION=v1.34.1
 
 curl -L https://github.com/operator-framework/operator-sdk/releases/download/$RELEASE_VERSION/operator-sdk_linux_amd64 -o operator-sdk
 curl -L https://github.com/operator-framework/operator-sdk/releases/download/$RELEASE_VERSION/ansible-operator_linux_amd64 -o ansible-operator
@@ -27,7 +27,7 @@ sudo mv operator-sdk ansible-operator helm-operator /usr/local/bin
 .MacOS
 [source,sh]
 ----
-RELEASE_VERSION=v1.30.0
+RELEASE_VERSION=v1.34.1
 
 curl -L https://github.com/operator-framework/operator-sdk/releases/download/$RELEASE_VERSION/operator-sdk_darwin_arm64 -o operator-sdk
 curl -L https://github.com/operator-framework/operator-sdk/releases/download/$RELEASE_VERSION/ansible-operator_darwin_arm64 -o ansible-operator
@@ -52,13 +52,11 @@ sudo yum -y install gcc python3-devel virtualenv make
 virtualenv -p $(which python3) ~/virtualenvs/ansible-operator
 source ~/virtualenvs/ansible-operator/bin/activate
 pip install -U pip
-pip install ansible==8.1.0
-pip install ansible-runner==2.3.3
+pip install ansible==8.7.0
+pip install ansible-runner==2.3.6
 pip install ansible-runner-http==1.0.0
-pip install openshift==0.13.1
+pip install openshift==0.13.2
 
-// # Install Kubernetes Collection
-// ansible-galaxy collection install community.kubernetes
 # Install Operator SDK Util collection
 ansible-galaxy collection install operator_sdk.util
 ----
@@ -139,7 +137,7 @@ cat Dockerfile
 .Sample Output
 [source,texinfo]
 ----
-FROM quay.io/operator-framework/ansible-operator:v1.30.0
+FROM quay.io/operator-framework/ansible-operator:v1.34.1
 
 COPY requirements.yml ${HOME}/requirements.yml
 RUN ansible-galaxy collection install -r ${HOME}/requirements.yml \
@@ -225,7 +223,7 @@ kind: Gitea
 metadata:
   name: repository
 spec:
-  giteaImageTag: 1.20.0
+  giteaImageTag: 1.21.7
   postgresqlVolumeSize: 4Gi
   giteaVolumeSize: 4Gi
   giteaSsl: True
@@ -255,7 +253,7 @@ oc get gitea repository -o yaml -n gitea
 ----
 [...]
 spec:
-  giteaImageTag: 1.20.0
+  giteaImageTag: 1.21.7
   giteaSsl: true
   giteaVolumeSize: 4Gi
   postgresqlVolumeSize: 4Gi
@@ -336,6 +334,12 @@ rules:
       - patch
       - update
       - watch
+  - apiGroups:
+      - ""
+    resources:
+      - secrets
+    verbs:
+      - watch
   ##
   ## Rules for gpte.opentlc.com/v1, Kind: Gitea
   ##
@@ -409,12 +413,12 @@ Login Succeeded!
 +
 [source,sh]
 ----
-export OPERATOR_VERSION=v2.0.1
+export OPERATOR_VERSION=v2.0.6
 
 # No v in front of the Bundle version
-export BUNDLE_VERSION=2.0.1
+export BUNDLE_VERSION=2.0.6
 
-export CATALOG_VERSION=v2.0.1
+export CATALOG_VERSION=v2.0.6
 ----
 
 . To build on Linux with `podman` instead of `docker` make sure that docker is symlink to podman:
@@ -1052,7 +1056,7 @@ Download and install the `opm` tool:
 .Linux (simple approach)
 [source,sh]
 ----
-export OPM_RELEASE=v1.28.0
+export OPM_RELEASE=v1.37.0
 
 curl -L https://github.com/operator-framework/operator-registry/releases/download/${OPM_RELEASE}/linux-amd64-opm -o ./opm
 
@@ -1064,7 +1068,7 @@ sudo mv opm /usr/local/bin/opm
 .macOS
 [source,sh]
 ----
-export OPM_RELEASE=v1.28.0
+export OPM_RELEASE=v1.37.0
 
 curl -L https://github.com/operator-framework/operator-registry/releases/download/$OPM_RELEASE/darwin-amd64-opm -o ./opm
 
