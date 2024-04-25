@@ -89,7 +89,7 @@ cd $HOME
 ----
 mkdir $HOME/gitea-operator
 cd $HOME/gitea-operator
-operator-sdk init --plugins=ansible --domain=rhpds.com
+operator-sdk init --plugins=ansible.sdk.operatorframework.io/v1 --domain=rhpds.com
 operator-sdk create api --group pfe --version v1 --kind Gitea --generate-playbook
 ----
 
@@ -223,7 +223,7 @@ kind: Gitea
 metadata:
   name: repository
 spec:
-  giteaImageTag: 1.21.7
+  giteaImageTag: 1.21.10
   postgresqlVolumeSize: 4Gi
   giteaVolumeSize: 4Gi
   giteaSsl: True
@@ -253,7 +253,7 @@ oc get gitea repository -o yaml -n gitea
 ----
 [...]
 spec:
-  giteaImageTag: 1.21.7
+  giteaImageTag: 1.21.10
   giteaSsl: true
   giteaVolumeSize: 4Gi
   postgresqlVolumeSize: 4Gi
@@ -413,12 +413,14 @@ Login Succeeded!
 +
 [source,sh]
 ----
-export OPERATOR_VERSION=v2.0.6
+VERSION=2.0.7
+
+export OPERATOR_VERSION=v${VERSION}
 
 # No v in front of the Bundle version
-export BUNDLE_VERSION=2.0.6
+export BUNDLE_VERSION=${VERSION}
 
-export CATALOG_VERSION=v2.0.6
+export CATALOG_VERSION=v${VERSION}
 ----
 
 . To build on Linux with `podman` instead of `docker` make sure that docker is symlink to podman:
@@ -438,24 +440,26 @@ make docker-build IMG=quay.io/$QUAY_ID/gitea-operator:$OPERATOR_VERSION
 .Sample Output
 [source]
 ----
-docker build -t quay.io/rhpds/gitea-operator:v2.0.0 .
-STEP 1/6: FROM quay.io/operator-framework/ansible-operator:v1.30.0
+docker build -t quay.io/rhpds/gitea-operator:v2.0.7 .
+STEP 1/6: FROM quay.io/operator-framework/ansible-operator:v1.34.1
 STEP 2/6: COPY requirements.yml ${HOME}/requirements.yml
---> Using cache 78c963e139086bdec2d5e010d9bb38b2d8ee51a6bddb64a64c63c63820c0ae85
---> 78c963e1390
+--> Using cache 90bedc4e54badf122e5f683e475f1c780e526742afe5934d23042fa29a4a60b9
+--> 90bedc4e54b
 STEP 3/6: RUN ansible-galaxy collection install -r ${HOME}/requirements.yml  && chmod -R ug+rwx ${HOME}/.ansible
---> Using cache 203b085e5b81cde4ca5a795f9d9c1926d92f734c1d93d29f5095c3b0173224d5
---> 203b085e5b8
+--> Using cache 1b7e4658798f669837ca86fdc8facd6c99a0c417c8ec46923829f0c0fcae83ed
+--> 1b7e4658798
 STEP 4/6: COPY watches.yaml ${HOME}/watches.yaml
---> Using cache 26e433e574d51710941dfd834d1b4fcadf6fb5c7f2535c1e6a6f79b510d8ab51
---> 26e433e574d
+--> Using cache 96e16f7e9f786e9221665831a1d0a2a1b55093076bb26c2ee9ba3c1c1c7570b1
+--> 96e16f7e9f7
 STEP 5/6: COPY roles/ ${HOME}/roles/
---> 06377b71d50
+--> Using cache eadee21488fa5df1271c3d47c1b78cfdb605fe3c25957e25d7b65db1c0606b91
+--> eadee21488f
 STEP 6/6: COPY playbooks/ ${HOME}/playbooks/
-COMMIT quay.io/rhpds/gitea-operator:v2.0.0
---> b7bc7c319ed
-Successfully tagged quay.io/rhpds/gitea-operator:v2.0.0
-b7bc7c319edd23232cf711766c52b11fa99261865a7c5680bfee776a75c53bdd
+--> Using cache 2e6d71f29415beb0d8ca5e7ede0572cbd161cc26adec2702b066bdc304b72c18
+COMMIT quay.io/rhpds/gitea-operator:v2.0.7
+--> 2e6d71f2941
+Successfully tagged quay.io/rhpds/gitea-operator:v2.0.7
+2e6d71f29415beb0d8ca5e7ede0572cbd161cc26adec2702b066bdc304b72c18
 ----
 
 . Push the image to the registry:
@@ -1085,6 +1089,14 @@ podman login -u $QUAY_ID quay.io
 ----
 
 . If this is the first time you are creating the catalog image create the image from scratch:
+.. Create the catalog image:
++
+[source,sh]
+----
+make catalog-build CATALOG_IMG=quay.io/$QUAY_ID/gitea-catalog:latest BUNDLE_IMGS=quay.io/$QUAY_ID/gitea-operator-bundle:v${BUNDLE_VERSION}
+----
+
+////
 .. Create the index image - this image contains just the bundle image for the gitea operator:
 +
 [source,sh]
@@ -1154,6 +1166,8 @@ INFO[0009] writing dockerfile: index.Dockerfile357423690  bundles="[quay.io/gpte
 INFO[0009] running docker build                          bundles="[quay.io/gpte-devops-automation/gitea-operator-bundle:v1.2.0]"
 INFO[0009] [docker build -f index.Dockerfile357423690 -t quay.io/gpte-devops-automation/gitea-catalog:v1.2.0 .]  bundles="[quay.io/gpte-devops-automation/gitea-operator-bundle:v1.2.0]"
 ----
+
+////
 
 . Tag the image with the version and push both the catalog image tags to the Quay repository:
 +

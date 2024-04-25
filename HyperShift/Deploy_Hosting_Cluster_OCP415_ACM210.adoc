@@ -1,0 +1,350 @@
+
+= Instructions to deploy a Hosting (Hub) Cluster using RHACM 2.10 on OCP 4.15
+
+:numbered:
+:toc:
+
+These instructions are to deploy and configure a hub cluster for RHDP use. This cluster ban be used as a target cluster for new catalog items in RHdP which deploy OpenShift clusters using Hosted Control Planes.
+
+== Deploy Hub Cluster
+
+Use an AWS account that is outside of a Sandbox - Hypershift will need EIPs, Load Balancers, NAT Gateways etc and would run into capacity restrictions really quickly in a Sandbox account.
+
+[NOTE]
+----
+The current cluster is deployed in the `infra-prod` AWS account and uses the base domain `hcp.redhatworkshops.io`.
+----
+
+Use the following vars file to deploy a new OpenShift 4.15 cluster. These vars also preconfigure the policies for RHDP clusters with hosted control planes:
+
+.OpenShift 4.15 Cluster Vars
+[source,yaml]
+----
+# -------------------------------------------------------------------
+# Mandatory Variables
+# -------------------------------------------------------------------
+cloud_provider: ec2
+env_type: ocp4-cluster
+software_to_deploy: openshift4
+# -------------------------------------------------------------------
+# End Mandatory Variables
+# -------------------------------------------------------------------
+
+platform: labs
+purpose: production
+
+agnosticd_aws_capacity_reservation_enable: false
+aws_region: us-east-2
+aws_zones:
+- us-east-2a
+- us-east-2b
+- us-east-2c
+
+ssh_authorized_keys:
+- key: https://github.com/wkulhanek.keys
+
+master_instance_type: m5a.2xlarge
+master_instance_count: 3
+master_storage_type: io1
+master_storage_size: 250
+worker_instance_type: m5a.4xlarge
+worker_instance_count: 3
+worker_storage_type: gp3
+worker_storage_size: 250
+bastion_instance_type: t3a.medium
+bastion_instance_image: RHEL93GOLD-latest
+
+install_ftl: false
+install_student_user: false
+
+ocp4_installer_version: "4.15"
+ocp4_installer_root_url: http://mirror.openshift.com/pub/openshift-v4/clients
+
+ocp4_network_type: OVNKubernetes
+
+repo_method: satellite
+update_packages: true
+run_smoke_tests: false
+
+cloud_tags:
+- owner: wkulhane@redhat.com
+- Purpose: production
+- env_type: "{{ env_type }}"
+- guid: "{{ guid }}"
+
+infra_workloads:
+- ocp4_workload_machinesets
+- ocp4_workload_cert_manager
+- ocp4_workload_rhsso_authentication
+- ocp4_workload_pipelines
+- ocp4_workload_openshift_gitops
+- ocp4_workload_rhacm
+- ocp4_workload_rhacm_hypershift
+
+# Do not run any student customization.
+student_workloads: []
+
+# -------------------------------------------------------------------
+# Workload variables
+# -------------------------------------------------------------------
+
+# -------------------------------------------------------------------
+# ocp4_workload_machinesets
+# -------------------------------------------------------------------
+
+# Replace default MachineSets
+ocp4_workload_machinesets_disable_default_machinesets: true
+
+# Add MachineSets for autoscaled worker instances
+ocp4_workload_machinesets_machineset_groups:
+- name: autoscaled
+  role: autoscaled
+  instance_type: m5a.4xlarge
+  root_volume_size: 250
+  root_volume_type: gp3
+  autoscale: true
+  total_replicas: 3
+  # Autoscaler settings - minimum and maximum number of Machines
+  total_replicas_min: 3
+  total_replicas_max: 15
+
+# -------------------------------------------------------------------
+# Workload: ocp4_workload_rhsso_authentication
+# -------------------------------------------------------------------
+ocp4_workload_rhsso_authentication_namespace: rhsso
+ocp4_workload_rhsso_authentication_target_namespaces: ["rhsso"]
+ocp4_workload_rhsso_authentication_channel: stable
+ocp4_workload_rhsso_authentication_starting_csv: ""
+ocp4_workload_rhsso_authentication_use_catalog_source: false
+
+ocp4_workload_rhsso_authentication_admin_create: true
+ocp4_workload_rhsso_authentication_admin_username: admin
+ocp4_workload_rhsso_authentication_admin_password: "wk!ownsThis"
+
+ocp4_workload_rhsso_authentication_user_count: 2
+ocp4_workload_rhsso_authentication_user_name_base: user
+ocp4_workload_rhsso_authentication_user_password: openshift
+
+ocp4_workload_rhsso_authentication_remove_kubeadmin: true
+
+# -------------------------------------------------------------------
+# Workload: ocp4_workload_cert_manager
+# -------------------------------------------------------------------
+ocp4_workload_cert_manager_ec2_region: "{{ aws_region }}"
+ocp4_workload_cert_manager_ec2_access_key_id: "{{ hostvars.localhost.route53user_access_key }}"
+ocp4_workload_cert_manager_ec2_secret_access_key: "{{ hostvars.localhost.route53user_secret_access_key }}"
+ocp4_workload_cert_manager_channel: stable-v1
+ocp4_workload_cert_manager_use_catalog_snapshot: false
+ocp4_workload_cert_manager_install_ingress_certificates: true
+ocp4_workload_cert_manager_install_api_certificates: true
+
+# ---------------------------------------------------------
+# OpenShift Pipelines
+# ---------------------------------------------------------
+ocp4_workload_pipelines_channel: pipelines-1.14
+ocp4_workload_pipelines_use_catalog_snapshot: false
+
+# ---------------------------------------------------------
+# OpenShift Gitops
+# ---------------------------------------------------------
+ocp4_workload_openshift_gitops_channel: gitops-1.12
+
+# -------------------------------------------------------------------
+# Workload: ocp4_workload_rhacm
+# -------------------------------------------------------------------
+ocp4_workload_rhacm_acm_channel: release-2.10
+ocp4_workload_rhacm_use_catalog_snapshot: false
+
+# -------------------------------------------------------------------
+# Workload: ocp4_workload_rhacm_hypershift
+# -------------------------------------------------------------------
+ocp4_workload_rhacm_hypershift_rhdp_policies_setup: true
+ocp4_workload_rhacm_hypershift_managed_cluster_set_setup: true
+ocp4_workload_rhacm_hypershift_deploy_clusters: []
+----
+
+== Set up `opentlc-mgr` user
+
+RHDP uses the `opentlc-mgr` user on the bastion VM to deploy things. Therefore this user needs to be created and configured on the bastion VM.
+
+. Switch to root:
++
+[source,sh]
+----
+sudo -i
+----
+
+. Add the `opentlc-mgr` user:
++
+[source,sh]
+----
+adduser opentlc-mgr
+----
+
+. Set up `.kube/config` to allow `opentlc-mgr` to work as `system:admin` on the cluster.
++
+[source,sh]
+----
+cp -R /home/ec2-user/.kube /home/opentlc-mgr
+chown -R opentlc-mgr:users /home/opentlc-mgr/.kube
+----
+
+. Set up SSH configuration for `opentlc-mgr`:
++
+[source,sh]
+----
+mkdir /home/opentlc-mgr/.ssh
+----
+
+. Add the `opentlc-mgr` *public SSH key* to be used from RHPD to the `authorized_keys` file.
++
+[source,sh]
+----
+cat <<EOF >/home/opentlc-mgr/.ssh/authorized_keys
+# OpenTLC Admin Backdoor
+ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCvZvn+GL0wTOsAdh1ikIQoqj2Fw/RA6F14O347rgKdpkgOQpGQk1k2gM8wcla2Y1o0bPIzwlNy1oh5o9uNjZDMeDcEXWuXbu0cRBy4pVRhh8a8zAZfssnqoXHHLyPyHWpdTmgIhr0UIGYrzHrnySAnUcDp3gJuE46UEBtrlyv94cVvZf+EZUTaZ+2KjTRLoNryCn7vKoGHQBooYg1DeHLcLSRWEADUo+bP0y64+X/XTMZOAXbf8kTXocqAgfl/usbYdfLOgwU6zWuj8vxzAKuMEXS1AJSp5aeqRKlbbw40IkTmLoQIgJdb2Zt98BH/xHDe9xxhscUCfWeS37XLp75J
+
+# AgnosticV
+-----BEGIN PUBLIC KEY-----
+MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA5v3nl7VQp3WYiHDitw2V
+E2AFOWtYW5GpDPfceh0TZnkSYaD1BD/Y3FQHUHS5rzrzWmR0MKJw5dscVwj9BWjp
+zcPAES/c/GOLPfkGf8n/Fe3x4MtxFcV2TjLJRDVTImRXIdTPW56EFXu3vdfjH2Ud
+upsSyasnY3s9kdR8d7vOViGRcyqO79l6gd8l7hjEcHcLGSPcxavQlEnsQFuN3LQy
+srer9cUD4aSd0YyTgqNGhjqUIT9P75TqHgGIJvfgtqHkgZlxjXeOErFNE34mbkby
+1Cbzj/CnfJMMBMc4FuCuzqPjxfYYp4r2lMRNrRtuOlB6YIx+lzrko5f5evDz93L9
+BQIDAQAB
+-----END PUBLIC KEY-----
+----
+
+. Change permissions for the directory and file:
++
+[source,sh]
+----
+chown -R opentlc-mgr:users /home/opentlc-mgr/.ssh
+chmod 0700 /home/opentlc-mgr/.ssh
+chmod 0644 /home/opentlc-mgr/.ssh/*
+----
+
+. Exit the root shell
++
+[source,sh]
+----
+exit
+----
+
+== Configure Machine Management (Autoscale / Health checks)
+
+The configuration above sets up autoscaling for the worker nodes. But it does not (yet) set up `MachineHealthCheck` resources.
+
+. Set MS1/MS2/MS3 variables to names of the created machinesets (`oc get machineset.machine.openshift -n openshift-machine-api`)
+. Make a directory to hold the MachineHealthCheck definitions:
++
+[source,sh]
+----
+mkdir -p ${HOME}/machinemanagement
+----
+
+. Create Machine Health Checks for all three machine sets
++
+[source,sh]
+----
+cat <<EOF >${HOME}/machinemanagement/mhc-${MS1}.yaml
+---
+apiVersion: machine.openshift.io/v1beta1
+kind: MachineHealthCheck
+metadata:
+  name: mhc-${MS1}
+  namespace: openshift-machine-api
+spec:
+  selector:
+    matchLabels:
+      machine.openshift.io/cluster-api-machine-role: worker
+      machine.openshift.io/cluster-api-machine-type: worker
+      machine.openshift.io/cluster-api-machineset: ${MS1}
+  unhealthyConditions:
+  - type:    "Ready"
+    timeout: "300s"
+    status: "False"
+  - type:    "Ready"
+    timeout: "300s"
+    status: "Unknown"
+  maxUnhealthy: "40%"
+  nodeStartupTimeout: "10m"
+EOF
+
+cat <<EOF >${HOME}/machinemanagement/mhc-${MS2}.yaml
+---
+apiVersion: machine.openshift.io/v1beta1
+kind: MachineHealthCheck
+metadata:
+  name: mhc-${MS2}
+  namespace: openshift-machine-api
+spec:
+  selector:
+    matchLabels:
+      machine.openshift.io/cluster-api-machine-role: worker
+      machine.openshift.io/cluster-api-machine-type: worker
+      machine.openshift.io/cluster-api-machineset: ${MS2}
+  unhealthyConditions:
+  - type:    "Ready"
+    timeout: "300s"
+    status: "False"
+  - type:    "Ready"
+    timeout: "300s"
+    status: "Unknown"
+  maxUnhealthy: "40%"
+  nodeStartupTimeout: "10m"
+EOF
+
+cat <<EOF >${HOME}/machinemanagement/mhc-${MS3}.yaml
+---
+apiVersion: machine.openshift.io/v1beta1
+kind: MachineHealthCheck
+metadata:
+  name: mhc-${MS3}
+  namespace: openshift-machine-api
+spec:
+  selector:
+    matchLabels:
+      machine.openshift.io/cluster-api-machine-role: worker
+      machine.openshift.io/cluster-api-machine-type: worker
+      machine.openshift.io/cluster-api-machineset: ${MS3}
+  unhealthyConditions:
+  - type:    "Ready"
+    timeout: "300s"
+    status: "False"
+  - type:    "Ready"
+    timeout: "300s"
+    status: "Unknown"
+  maxUnhealthy: "40%"
+  nodeStartupTimeout: "10m"
+EOF
+----
+
+. Apply all resources to the cluster:
++
+[source,sh]
+----
+for resource in ${HOME}/machinemanagement/*.yaml; do; oc apply -f ${resource}; done
+----
+
+== Manual changes applied after deploying:
+
+. Change the secret `local-cluster/aws-credentials`
+.. Update `baseDomain` from `hub.hcp.redhatworkshops.io` to `hcp.redhatworkshops.io`
+
+. In the AWS Console create an *IAM User* called `hcp-route53-access`.
+.. Use the policy `route53-hcp`
+. For the new user create an AWS access key and access key id
+. Change the source secret for the Cert Manager ClusterIssuer secrets on hosted clusters `rhdp-policies/aws-secret-access-key`
+.. Provide Secret Access Key you just created
+
+== Catalog Item config for Hosted Cluster
+
+. AgnosticV CI `opentlc/SHARED_OCP4_HYPERSHIFT_CLUSTER`
+. Update:
+.. `ocp4_workload_deploy_hosted_cluster_base_domain: hcp.redhatworkshops.io`
+.. `ocp4_workload_deploy_hosted_cluster_certmanager_aws_hostedzone_id: Z09479273DWEW4PS23PI0`
+.. `ocp4_workload_deploy_hosted_cluster_certmanager_aws_access_key_id:` with a vaulted key created above
+.. `ocp4_workload_deploy_hosted_cluster_certmanager_aws_secret_access_key` with a vaulted secret key created above
+.. `target_host \ ansible_host: bastion.hub.hcp.redhatworkshops.io`
