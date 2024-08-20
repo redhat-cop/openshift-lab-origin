@@ -1,4 +1,4 @@
-= Building and publishing a Gitea Operator using the Ansible Operator SDK 1.34.1
+= Building and publishing a Gitea Operator using the Ansible Operator SDK 1.35.0
 
 == Install Operator SDK
 
@@ -12,7 +12,7 @@ In order to build an operator you need to install the Operator SDK binaries on y
 .Linux
 [source,sh]
 ----
-RELEASE_VERSION=v1.34.1
+RELEASE_VERSION=v1.35.0
 
 curl -L https://github.com/operator-framework/operator-sdk/releases/download/$RELEASE_VERSION/operator-sdk_linux_amd64 -o operator-sdk
 curl -L https://github.com/operator-framework/operator-sdk/releases/download/$RELEASE_VERSION/ansible-operator_linux_amd64 -o ansible-operator
@@ -223,7 +223,7 @@ kind: Gitea
 metadata:
   name: repository
 spec:
-  giteaImageTag: 1.21.10
+  giteaImageTag: 1.22.1
   postgresqlVolumeSize: 4Gi
   giteaVolumeSize: 4Gi
   giteaSsl: True
@@ -253,7 +253,7 @@ oc get gitea repository -o yaml -n gitea
 ----
 [...]
 spec:
-  giteaImageTag: 1.21.10
+  giteaImageTag: 1.22.1
   giteaSsl: true
   giteaVolumeSize: 4Gi
   postgresqlVolumeSize: 4Gi
@@ -413,7 +413,7 @@ Login Succeeded!
 +
 [source,sh]
 ----
-VERSION=2.0.7
+VERSION=2.0.8
 
 export OPERATOR_VERSION=v${VERSION}
 
@@ -718,6 +718,9 @@ spec:
                 type: boolean
               giteaStartSshServer:
                 description: Start SSH Server in the Gitea container. Default is false.
+                type: boolean
+              giteaStartLfsServer:
+                description: 'Start LFS Server in the Gitea container. Default: false'
                 type: boolean
               giteaDisableRegistration:
                 description: Disable user self-registration. If this flag is set an Admin User should be specified to be created. Otherwise no users can be created at all. Default is false.
