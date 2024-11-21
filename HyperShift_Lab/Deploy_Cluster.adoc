@@ -4,13 +4,13 @@
 
 Now that you have an environment with the hosted control planes (HyperShift) technology preview enabled it's time to deploy your first cluster. You will see that is it both easy and fast to create a new cluster using this approach.
 
-Right now the only way to deploy a new cluster is by using the `hypershift` CLI tool - there is no capability in the console yet. Well, there is an entry to deploy a new cluster in the console but it just shows the commands necessary for the command line.
+Right now the only way to deploy a new cluster is by using the `hcp` CLI tool - there is no capability in the console yet. Well, there is an entry to deploy a new cluster in the console but it just shows the commands necessary for the command line.
 
 == Deploy a new cluster
 
 . Log into your bastion VM if you are not already logged in - the instructions are in the introduction document.
 
-. Any new cluster will be deployed using the `hypershift` command line tool. This tool is available from the hub cluster. To show the download location for the command line tool use the following command:
+. Any new cluster will be deployed using the `hcp` command line tool. This tool is available from the hub cluster. To show the download location for the command line tool use the following command:
 +
 [source,sh]
 ----
@@ -27,7 +27,7 @@ https://hcp-cli-download-multicluster-engine.apps.cluster-cjx7q.sandbox136.opent
 +
 [source,sh]
 ----
-hypershift
+hcp
 ----
 +
 .Sample Output
@@ -499,7 +499,7 @@ EOF
 
 == Deleting a cluster with hosted control planes
 
-Deleting a cluster with hosted control planes is a two step process. First delete the ManagedCluster resource, then run `hypershift destroy` to delete the HostedCluster resource and AWS cloud infrastructure.
+Deleting a cluster with hosted control planes is a two step process. First delete the ManagedCluster resource, then run `hcp destroy` to delete the HostedCluster resource and AWS cloud infrastructure.
 
 . Delete the ManagedCluster. Note that this command is blocking for a while because of the finalizer in the ManagedCluster resource.
 +
@@ -515,11 +515,11 @@ You could also *Detach* the cluster from the clusters view of the web console by
 If you deleted via the command line you can see that the status of the cluster in the console changed to *Pending Import*.
 ====
 
-. You can not delete a cluster from the console so you need to delete it from the command line. The best way to do that is via the `hypershift` command line utility because that also cleans up the AWS resources (subnets, VPCs, EIPs) that got created when the cluster got deployed.
+. You can not delete a cluster from the console so you need to delete it from the command line. The best way to do that is via the `hcp` command line utility because that also cleans up the AWS resources (subnets, VPCs, EIPs) that got created when the cluster got deployed.
 +
 [source,sh]
 ----
-hypershift destroy cluster aws \
+hcp destroy cluster aws \
   --name production \
   --infra-id production-${GUID} \
   --region us-west-2 \
@@ -563,7 +563,7 @@ Sometimes it is desirable to deploy a hosted cluster in steps rather than the al
 
 === Create the AWS Infrastructure
 
-Just like before you will use the `hypershift` command line tool to create the AWS infrastructure resources. Only this time you will save the output to a JSON file to be used in the next steps.
+Just like before you will use the `hcp` command line tool to create the AWS infrastructure resources. Only this time you will save the output to a JSON file to be used in the next steps.
 
 This command does not know that it has access to the OpenShift cluster for the secret information - therefore you need to extract the information from the secret that has been prepopulated for you.
 
@@ -587,11 +587,11 @@ aws_secret_access_key = ${AWS_SECRET_ACCESS_KEY}
 EOF
 ----
 
-. Run the hypershift command line tool to create the AWS infrastructure:
+. Run the hcp command line tool to create the AWS infrastructure:
 +
 [source,sh]
 ----
-hypershift create infra aws \
+hcp create infra aws \
   --name production \
   --infra-id prod-${GUID} \
   --region us-west-1 \
@@ -659,7 +659,7 @@ export AWS_PUBLIC_ZONE_ID=$(cat ~/aws-infra.json | jq -r .publicZoneID)
 +
 [source,sh]
 ----
-hypershift create iam aws \
+hcp create iam aws \
   --aws-creds ~/.awscreds \
   --infra-id prod-${GUID} \
   --local-zone-id ${AWS_LOCAL_ZONE_ID} \
@@ -729,7 +729,7 @@ cat ~/aws-iam.json; echo
 +
 [source,sh]
 ----
-hypershift create cluster aws \
+hcp create cluster aws \
   --infra-json ~/aws-infra.json \
   --iam-json ~/aws-iam.json \
   --name production \
