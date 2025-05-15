@@ -285,7 +285,7 @@ status:
     type: Failure
   giteaHostname: repository-gitea.apps-crc.testing
   giteaRoute: https://repository-gitea.apps-crc.testing
-  ----
+----
 +
 You should see that the `ansibleResult` is successful.
 
@@ -509,6 +509,12 @@ Successfully tagged quay.io/rhpds/gitea-operator:v2.1.0
 make docker-push IMG=quay.io/$QUAY_ID/gitea-operator:$OPERATOR_VERSION
 ----
 
+. Tag and push the `latest` tag
++
+[source,sh]
+----
+make docker-push IMG=quay.io/$QUAY_ID/gitea-operator:latest
+----
 . Make sure the repository `$QUAY_ID/gitea-operator` in Quay is public.
 
 == Add OpenAPIV3Schema Documentation to the Operator
