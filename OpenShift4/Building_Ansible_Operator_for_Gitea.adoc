@@ -513,6 +513,7 @@ make docker-push IMG=quay.io/$QUAY_ID/gitea-operator:$OPERATOR_VERSION
 +
 [source,sh]
 ----
+podman tag quay.io/$QUAY_ID/gitea-operator:$OPERATOR_VERSION quay.io/$QUAY_ID/gitea-operator:latest
 make docker-push IMG=quay.io/$QUAY_ID/gitea-operator:latest
 ----
 . Make sure the repository `$QUAY_ID/gitea-operator` in Quay is public.
@@ -702,9 +703,6 @@ spec:
               giteaAdminPasswordSecretName:
                 description: Name of a secret containing the Gitea admin user's password in secret key adminPassword. If this variable is set it takes precedence over all other ways to specify/generate an admin password.
                 type: string
-              giteaAdminPasswordExpose:
-                description: Expose the final Gitea admin password in the custom resource status section. Default is true for compatibility. Set to false to not show the password in the status section.
-                type: boolean
               giteaAdminEmail:
                 description: e-mail address for the Gitea Admin User. Default is 'notset@notset.org'
                 type: string
@@ -730,9 +728,6 @@ spec:
               giteaUserPasswordSecretName:
                 description: Name of a secret containing the Gitea user common password in secret key userPassword. If this variable is set it takes precedence over all other ways to specify/generate a user password.
                 type: string
-              giteaUserPasswordExpose:
-                description: Expose the common Gitea user password in the custom resource status section. Default is true for compatibility. Set to false to not show the password in the status section.
-                type: boolean
 
               giteaMigrateRepositories:
                 description: For created users migrate repositories from another location, e.g. GitHub. Default is false.
@@ -1155,7 +1150,7 @@ mkdir $HOME/gitea-operator/gitea-catalog
 opm render quay.io/$QUAY_ID/gitea-operator-bundle:v${BUNDLE_VERSION} -o yaml > $HOME/gitea-operator/gitea-catalog/index.yaml
 ----
 
-. Add the following lines to the end of the gitea-catalog/index.yaml file (only run this command once)
+. Add the following lines to the end of the gitea-catalog/index.yaml file
 +
 [source,sh]
 ----
