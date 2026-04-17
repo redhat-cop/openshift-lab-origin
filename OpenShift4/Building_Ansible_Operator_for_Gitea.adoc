@@ -1,18 +1,18 @@
-= Building and publishing a Gitea Operator using the Ansible Operator SDK 1.39.2
+= Building and publishing a Gitea Operator using the Ansible Operator SDK 1.42.2
 
 == Install Operator SDK
 
 [NOTE]
 The following instructions have been written for RHEL 9. But this entire process also works on macOS (with ARM chips) - and where appropriate the necessary adjustments and commands have been provided.
 
-In order to build an operator you need to install the Operator SDK binaries on your machine. The current release (as of 2025/05/14) is 1.39.2. In order to follow this lab it is recommended you stick to this release as future updates may break the process. This lab will be updated on a best effort basis up to keep up with Operator SDK releases.
+In order to build an operator you need to install the Operator SDK binaries on your machine. The current release (as of 2026/04/17) is 1.42.2. In order to follow this lab it is recommended you stick to this release as future updates may break the process. This lab will be updated on a best effort basis up to keep up with Operator SDK releases.
 
 . Install the Operator SDK on your machine:
 +
 .Linux
 [source,sh]
 ----
-RELEASE_VERSION=v1.39.2
+RELEASE_VERSION=v1.42.2
 
 curl -L https://github.com/operator-framework/operator-sdk/releases/download/$RELEASE_VERSION/operator-sdk_linux_amd64 -o operator-sdk
 curl -L https://github.com/operator-framework/operator-sdk/releases/download/$RELEASE_VERSION/helm-operator_linux_amd64 -o helm-operator
@@ -26,7 +26,7 @@ sudo mv operator-sdk helm-operator /usr/local/bin
 .MacOS
 [source,sh]
 ----
-RELEASE_VERSION=v1.39.2
+RELEASE_VERSION=v1.42.2
 
 curl -L https://github.com/operator-framework/operator-sdk/releases/download/$RELEASE_VERSION/operator-sdk_darwin_arm64 -o operator-sdk
 curl -L https://github.com/operator-framework/operator-sdk/releases/download/$RELEASE_VERSION/helm-operator_darwin_arm64 -o helm-operator
@@ -138,7 +138,7 @@ cat Dockerfile
 .Sample Output
 [source,texinfo]
 ----
-FROM quay.io/operator-framework/ansible-operator:v1.37.2
+FROM quay.io/operator-framework/ansible-operator:v1.42.2
 
 COPY requirements.yml ${HOME}/requirements.yml
 RUN ansible-galaxy collection install -r ${HOME}/requirements.yml \
@@ -225,7 +225,7 @@ kind: Gitea
 metadata:
   name: repository
 spec:
-  giteaImageTag: 1.23.7
+  giteaImageTag: 1.25.5.2
   postgresqlVolumeSize: 4Gi
   giteaVolumeSize: 4Gi
   giteaSsl: True
@@ -256,7 +256,7 @@ oc get gitea repository -o yaml -n gitea
 [...]
 spec:
   giteaImagePullPolicy: Always
-  giteaImageTag: 1.23.7
+  giteaImageTag: 1.25.5.2
   giteaSsl: true
   giteaVolumeSize: 4Gi
   postgresqlVolumeSize: 4Gi
@@ -425,7 +425,7 @@ Login Succeeded!
 +
 [source,sh]
 ----
-VERSION=2.1.0
+VERSION=2.3.0
 
 export OPERATOR_VERSION=v${VERSION}
 
@@ -452,54 +452,39 @@ make docker-build IMG=quay.io/$QUAY_ID/gitea-operator:$OPERATOR_VERSION
 .Sample Output
 [source]
 ----
-docker build -t quay.io/rhpds/gitea-operator:v2.1.0 .
-STEP 1/6: FROM quay.io/operator-framework/ansible-operator:v1.37.2
-Trying to pull quay.io/operator-framework/ansible-operator:v1.37.2...
-Getting image source signatures
-Copying blob d4ab37a59436 done   |
-Copying blob e2e136b58138 done   |
-Copying blob 03fb1ecd9e7e done   |
-Copying blob 872ff848dcab done   |
-Copying blob 66b78872fa72 done   |
-Copying blob 867bea1ada21 done   |
-Copying blob 03f3e8b682ef done   |
-Copying blob 861fee6718a1 done   |
-Copying blob e0ac7678bc4f done   |
-Copying blob 4f4fb700ef54 done   |
-Copying blob b7d9888c6a00 done   |
-Copying config f22ec8f5ca done   |
-Writing manifest to image destination
+docker build -t quay.io/rhpds/gitea-operator:v2.3.0 .
+STEP 1/6: FROM quay.io/operator-framework/ansible-operator:v1.42.2
 STEP 2/6: COPY requirements.yml ${HOME}/requirements.yml
---> d794bf243f0e
+--> 97e2688cb6f5
 STEP 3/6: RUN ansible-galaxy collection install -r ${HOME}/requirements.yml  && chmod -R ug+rwx ${HOME}/.ansible
 Starting galaxy collection install process
 Process install dependency map
 Starting collection install process
-Downloading https://galaxy.ansible.com/api/v3/plugin/ansible/content/published/collections/artifacts/operator_sdk-util-0.5.0.tar.gz to /opt/ansible/.ansible/tmp/ansible-local-2h1s2ex7j/tmp2c6huuhm/operator_sdk-util-0.5.0-fsks9hg6
+Downloading https://galaxy.ansible.com/api/v3/plugin/ansible/content/published/collections/artifacts/operator_sdk-util-0.5.0.tar.gz to /opt/ansible/.ansible/tmp/ansible-local-2tkwiy7fl/tmpxl92zk0n/operator_sdk-util-0.5.0-znot364p
 Installing 'operator_sdk.util:0.5.0' to '/opt/ansible/.ansible/collections/ansible_collections/operator_sdk/util'
 operator_sdk.util:0.5.0 was installed successfully
-Downloading https://galaxy.ansible.com/api/v3/plugin/ansible/content/published/collections/artifacts/kubernetes-core-3.2.0.tar.gz to /opt/ansible/.ansible/tmp/ansible-local-2h1s2ex7j/tmp2c6huuhm/kubernetes-core-3.2.0-q8p9sjdj
-Installing 'kubernetes.core:3.2.0' to '/opt/ansible/.ansible/collections/ansible_collections/kubernetes/core'
-kubernetes.core:3.2.0 was installed successfully
-Downloading https://galaxy.ansible.com/api/v3/plugin/ansible/content/published/collections/artifacts/cloud-common-3.0.0.tar.gz to /opt/ansible/.ansible/tmp/ansible-local-2h1s2ex7j/tmp2c6huuhm/cloud-common-3.0.0-7h4139n6
-Installing 'cloud.common:3.0.0' to '/opt/ansible/.ansible/collections/ansible_collections/cloud/common'
-cloud.common:3.0.0 was installed successfully
-Downloading https://galaxy.ansible.com/api/v3/plugin/ansible/content/published/collections/artifacts/community-docker-3.12.1.tar.gz to /opt/ansible/.ansible/tmp/ansible-local-2h1s2ex7j/tmp2c6huuhm/community-docker-3.12.1-b75nfjxh
-Installing 'community.docker:3.12.1' to '/opt/ansible/.ansible/collections/ansible_collections/community/docker'
-community.docker:3.12.1 was installed successfully
-Downloading https://galaxy.ansible.com/api/v3/plugin/ansible/content/published/collections/artifacts/community-library_inventory_filtering_v1-1.1.1.tar.gz to /opt/ansible/.ansible/tmp/ansible-local-2h1s2ex7j/tmp2c6huuhm/community-library_inventory_filtering_v1-1.1.1-qr0zox3w
-Installing 'community.library_inventory_filtering_v1:1.1.1' to '/opt/ansible/.ansible/collections/ansible_collections/community/library_inventory_filtering_v1'
-community.library_inventory_filtering_v1:1.1.1 was installed successfully
---> c266acaf0856
+Downloading https://galaxy.ansible.com/api/v3/plugin/ansible/content/published/collections/artifacts/kubernetes-core-6.3.0.tar.gz to /opt/ansible/.ansible/tmp/ansible-local-2tkwiy7fl/tmpxl92zk0n/kubernetes-core-6.3.0-548ooyh_
+Installing 'kubernetes.core:6.3.0' to '/opt/ansible/.ansible/collections/ansible_collections/kubernetes/core'
+kubernetes.core:6.3.0 was installed successfully
+Downloading https://galaxy.ansible.com/api/v3/plugin/ansible/content/published/collections/artifacts/cloud-common-5.0.0.tar.gz to /opt/ansible/.ansible/tmp/ansible-local-2tkwiy7fl/tmpxl92zk0n/cloud-common-5.0.0-wej5716q
+Installing 'cloud.common:5.0.0' to '/opt/ansible/.ansible/collections/ansible_collections/cloud/common'
+cloud.common:5.0.0 was installed successfully
+Downloading https://galaxy.ansible.com/api/v3/plugin/ansible/content/published/collections/artifacts/community-docker-5.2.0.tar.gz to /opt/ansible/.ansible/tmp/ansible-local-2tkwiy7fl/tmpxl92zk0n/community-docker-5.2.0-m1bkntrr
+Installing 'community.docker:5.2.0' to '/opt/ansible/.ansible/collections/ansible_collections/community/docker'
+community.docker:5.2.0 was installed successfully
+Downloading https://galaxy.ansible.com/api/v3/plugin/ansible/content/published/collections/artifacts/community-library_inventory_filtering_v1-1.1.5.tar.gz to /opt/ansible/.ansible/tmp/ansible-local-2tkwiy7fl/tmpxl92zk0n/community-library_inventory_filtering_v1-1.1.5-3ulgc00k
+Installing 'community.library_inventory_filtering_v1:1.1.5' to '/opt/ansible/.ansible/collections/ansible_collections/community/library_inventory_filtering_v1'
+community.library_inventory_filtering_v1:1.1.5 was installed successfully
+--> 7226006ecee5
 STEP 4/6: COPY watches.yaml ${HOME}/watches.yaml
---> 2914d41b1fad
+--> be154afd3e9a
 STEP 5/6: COPY roles/ ${HOME}/roles/
---> ea37dff9ee6e
+--> 9768c3ee19dd
 STEP 6/6: COPY playbooks/ ${HOME}/playbooks/
-COMMIT quay.io/rhpds/gitea-operator:v2.1.0
---> 39b7a25c8489
-Successfully tagged quay.io/rhpds/gitea-operator:v2.1.0
-39b7a25c8489690a0e1e31a8b860174f357b5bc24eb3dbce0bcb79c9dceffd85
+COMMIT quay.io/rhpds/gitea-operator:v2.3.0
+--> 412105ca516d
+Successfully tagged quay.io/rhpds/gitea-operator:v2.3.0
+412105ca516d6b28d0c96a152a7394a7493e02ff204b6b1e8a6ee673f57021fc
 ----
 
 . Push the image to the registry:
@@ -1108,7 +1093,7 @@ Download and install the `opm` tool:
 .Linux (simple approach)
 [source,sh]
 ----
-export OPM_RELEASE=v1.54.0
+export OPM_RELEASE=v1.65.0
 
 curl -L https://github.com/operator-framework/operator-registry/releases/download/${OPM_RELEASE}/linux-amd64-opm -o ./opm
 
@@ -1120,7 +1105,7 @@ sudo mv opm /usr/local/bin/opm
 .macOS
 [source,sh]
 ----
-export OPM_RELEASE=v1.54.0
+export OPM_RELEASE=v1.65.0
 
 curl -L https://github.com/operator-framework/operator-registry/releases/download/$OPM_RELEASE/darwin-amd64-opm -o ./opm
 
